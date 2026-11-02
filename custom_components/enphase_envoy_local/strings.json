@@ -1,0 +1,310 @@
+{
+  "config": {
+    "flow_title": "Envoy {serial}",
+    "step": {
+      "user": {
+        "title": "Enphase IQ Gateway",
+        "description": "The gateway is read directly on your own network; no cloud is used for the measurements.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP address or host name of the IQ Gateway, e.g. 192.168.1.50"
+        }
+      },
+      "auth": {
+        "title": "Sign in for gateway {serial}",
+        "description": "Firmware {firmware} needs a token. Enter your Enlighten e-mail and password (the token is then fetched and renewed automatically), or paste a token from entrez.enphaseenergy.com.",
+        "data": {
+          "username": "Enlighten e-mail",
+          "password": "Enlighten password",
+          "token": "Token (optional, instead of e-mail/password)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The token for gateway {serial} no longer works. Enter your Enlighten e-mail and password or a new token.",
+        "data": {
+          "username": "Enlighten e-mail",
+          "password": "Enlighten password",
+          "token": "Token (optional, instead of e-mail/password)"
+        }
+      },
+      "reconfigure": {
+        "title": "Change address",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP address or host name of the IQ Gateway, e.g. 192.168.1.50"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the gateway on this address.",
+      "not_an_envoy": "This address does not answer like an Enphase IQ Gateway.",
+      "no_credentials": "Enter an e-mail and password, or a token.",
+      "invalid_auth": "Enlighten rejected the e-mail or password.",
+      "mfa_enabled": "This Enlighten account uses two-factor authentication. Paste a token instead.",
+      "not_owner": "Enphase issued no token for this gateway. Is it linked to this Enlighten account?",
+      "enlighten_unavailable": "Enlighten is not reachable right now. Try again later or paste a token.",
+      "invalid_token": "This is not a valid token.",
+      "token_rejected": "The gateway rejected the token.",
+      "unknown": "Unexpected error, see the log."
+    },
+    "abort": {
+      "already_configured": "This gateway is already set up.",
+      "reauth_successful": "Signed in again.",
+      "reconfigure_successful": "Address changed.",
+      "wrong_device": "That address belongs to a different gateway.",
+      "not_ipv4_address": "Only IPv4 addresses are supported.",
+      "cannot_connect": "Cannot reach the gateway."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "scan_interval": "Update interval",
+          "inverter_sensors": "Sensors per microinverter",
+          "underperform_threshold": "Underperformance alert below"
+        },
+        "data_description": {
+          "scan_interval": "Seconds between readings (5-300).",
+          "inverter_sensors": "Microinverters report about every 5 minutes.",
+          "underperform_threshold": "A panel is flagged when it produces less than this percentage of the median of the panels on the same roof surface."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "production_power": {
+        "name": "Production"
+      },
+      "production_today": {
+        "name": "Production today"
+      },
+      "production_7days": {
+        "name": "Production last 7 days"
+      },
+      "production_lifetime": {
+        "name": "Production total"
+      },
+      "active_inverters": {
+        "name": "Active microinverters"
+      },
+      "consumption_power": {
+        "name": "Consumption"
+      },
+      "consumption_today": {
+        "name": "Consumption today"
+      },
+      "consumption_lifetime": {
+        "name": "Consumption total"
+      },
+      "net_power": {
+        "name": "Grid power"
+      },
+      "last_reading": {
+        "name": "Last reading"
+      },
+      "token_expires": {
+        "name": "Token expires"
+      },
+      "production_phase_power": {
+        "name": "Production {phase}"
+      },
+      "production_phase_voltage": {
+        "name": "Voltage {phase}"
+      },
+      "production_phase_current": {
+        "name": "Current {phase}"
+      },
+      "production_phase_lifetime": {
+        "name": "Production total {phase}"
+      },
+      "consumption_phase_power": {
+        "name": "Consumption {phase}"
+      },
+      "net_phase_power": {
+        "name": "Grid power {phase}"
+      },
+      "inverter_power": {
+        "name": "Power"
+      },
+      "inverter_last_report": {
+        "name": "Last report"
+      },
+      "grid_import_today": {
+        "name": "Grid import today"
+      },
+      "grid_export_today": {
+        "name": "Grid export today"
+      },
+      "grid_import_lifetime": {
+        "name": "Grid import total"
+      },
+      "grid_export_lifetime": {
+        "name": "Grid export total"
+      },
+      "self_consumption_today": {
+        "name": "Self-consumption today"
+      },
+      "self_sufficiency_today": {
+        "name": "Self-sufficiency today"
+      },
+      "frequency": {
+        "name": "Grid frequency"
+      },
+      "power_factor": {
+        "name": "Power factor"
+      },
+      "consumption_phase_current": {
+        "name": "Consumption current {phase}"
+      },
+      "inverter_max_power": {
+        "name": "Maximum power"
+      },
+      "inverter_dc_power": {
+        "name": "DC power"
+      },
+      "inverter_efficiency": {
+        "name": "Efficiency"
+      },
+      "inverter_dc_voltage": {
+        "name": "DC voltage"
+      },
+      "inverter_dc_current": {
+        "name": "DC current"
+      },
+      "inverter_ac_voltage": {
+        "name": "AC voltage"
+      },
+      "inverter_ac_current": {
+        "name": "AC current"
+      },
+      "inverter_ac_frequency": {
+        "name": "AC frequency"
+      },
+      "inverter_temperature": {
+        "name": "Temperature"
+      },
+      "inverter_energy_today": {
+        "name": "Production today"
+      },
+      "inverter_energy_yesterday": {
+        "name": "Production yesterday"
+      },
+      "inverter_energy_week": {
+        "name": "Production this week"
+      },
+      "inverter_energy_lifetime": {
+        "name": "Production total"
+      },
+      "inverter_phase": {
+        "name": "Phase"
+      },
+      "inverter_firmware": {
+        "name": "Firmware"
+      },
+      "inverter_signal": {
+        "name": "Signal strength"
+      },
+      "last_cloud_report": {
+        "name": "Last report to Enlighten"
+      },
+      "wifi_signal": {
+        "name": "Wi-Fi signal"
+      },
+      "network_interface": {
+        "name": "Network connection",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "Wi-Fi",
+          "cellular": "Cellular",
+          "eth0": "Ethernet",
+          "wlan0": "Wi-Fi"
+        }
+      },
+      "panel_layout": {
+        "name": "Panel layout",
+        "unit_of_measurement": "panels"
+      },
+      "inverter_performance": {
+        "name": "Performance vs. roof"
+      },
+      "inverter_performance_week": {
+        "name": "Performance vs. roof (7 days)"
+      }
+    },
+    "binary_sensor": {
+      "cloud_connected": {
+        "name": "Enlighten connection"
+      },
+      "export_limit": {
+        "name": "Export limit active"
+      },
+      "production_stopped": {
+        "name": "Production stopped"
+      },
+      "inverter_producing": {
+        "name": "Producing"
+      },
+      "inverter_communicating": {
+        "name": "Communicating"
+      },
+      "inverter_underperforming": {
+        "name": "Underperforming"
+      },
+      "inverter_no_output": {
+        "name": "No output"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Refresh now"
+      },
+      "renew_token": {
+        "name": "Renew token"
+      },
+      "refresh_layout": {
+        "name": "Fetch panel layout"
+      }
+    },
+    "switch": {
+      "production": {
+        "name": "Production"
+      }
+    }
+  },
+  "exceptions": {
+    "needs_installer": {
+      "message": "The gateway only allows this with an installer token."
+    },
+    "no_credentials": {
+      "message": "No Enlighten e-mail/password is set; sign in again to add them."
+    },
+    "command_failed": {
+      "message": "The gateway did not accept the command: {error}"
+    },
+    "no_layout": {
+      "message": "Enlighten has no panel layout for this system."
+    }
+  },
+  "issues": {
+    "inverter_underperforming": {
+      "title": "Panel {serial} produces less than its neighbours",
+      "description": "Microinverter {serial} ({where}) produced {performance}% of the median of the other panels on the same roof surface. Check for shade, dirt or damage. This notice disappears by itself when it recovers."
+    },
+    "inverter_no_output": {
+      "title": "Panel {serial} produces nothing",
+      "description": "Microinverter {serial} ({where}) has given no output for more than 30 minutes while the other panels on the same roof surface are producing. Check the inverter, its connector and the panel."
+    },
+    "cloud_offline": {
+      "title": "Gateway {serial} has no connection with Enlighten",
+      "description": "The gateway has not reported to Enlighten for more than 6 hours. Local readings keep working, but Enlighten and firmware updates do not. Check its network connection."
+    }
+  }
+}

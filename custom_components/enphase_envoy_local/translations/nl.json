@@ -1,0 +1,310 @@
+{
+  "config": {
+    "flow_title": "Envoy {serial}",
+    "step": {
+      "user": {
+        "title": "Enphase IQ Gateway",
+        "description": "De gateway wordt rechtstreeks op je eigen netwerk uitgelezen; voor de metingen wordt geen cloud gebruikt.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP-adres of hostnaam van de IQ Gateway, bijv. 192.168.1.50"
+        }
+      },
+      "auth": {
+        "title": "Inloggen voor gateway {serial}",
+        "description": "Firmware {firmware} heeft een token nodig. Vul je Enlighten-e-mailadres en wachtwoord in (het token wordt dan automatisch opgehaald en vernieuwd), of plak een token van entrez.enphaseenergy.com.",
+        "data": {
+          "username": "Enlighten e-mailadres",
+          "password": "Enlighten-wachtwoord",
+          "token": "Token (optioneel, in plaats van e-mail/wachtwoord)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Opnieuw inloggen",
+        "description": "Het token van gateway {serial} werkt niet meer. Vul je Enlighten-e-mailadres en wachtwoord of een nieuw token in.",
+        "data": {
+          "username": "Enlighten e-mailadres",
+          "password": "Enlighten-wachtwoord",
+          "token": "Token (optioneel, in plaats van e-mail/wachtwoord)"
+        }
+      },
+      "reconfigure": {
+        "title": "Adres wijzigen",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP-adres of hostnaam van de IQ Gateway, bijv. 192.168.1.50"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "De gateway is niet bereikbaar op dit adres.",
+      "not_an_envoy": "Dit adres reageert niet als een Enphase IQ Gateway.",
+      "no_credentials": "Vul een e-mailadres en wachtwoord in, of een token.",
+      "invalid_auth": "Enlighten weigert het e-mailadres of wachtwoord.",
+      "mfa_enabled": "Dit Enlighten-account gebruikt tweestapsverificatie. Plak in plaats daarvan een token.",
+      "not_owner": "Enphase geeft geen token voor deze gateway. Is hij gekoppeld aan dit Enlighten-account?",
+      "enlighten_unavailable": "Enlighten is nu niet bereikbaar. Probeer het later opnieuw of plak een token.",
+      "invalid_token": "Dit is geen geldig token.",
+      "token_rejected": "De gateway weigert het token.",
+      "unknown": "Onverwachte fout, zie het logboek."
+    },
+    "abort": {
+      "already_configured": "Deze gateway is al ingesteld.",
+      "reauth_successful": "Opnieuw ingelogd.",
+      "reconfigure_successful": "Adres gewijzigd.",
+      "wrong_device": "Dat adres hoort bij een andere gateway.",
+      "not_ipv4_address": "Alleen IPv4-adressen worden ondersteund.",
+      "cannot_connect": "De gateway is niet bereikbaar."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opties",
+        "data": {
+          "scan_interval": "Interval uitlezen",
+          "inverter_sensors": "Sensoren per micro-omvormer",
+          "underperform_threshold": "Melding onderprestatie onder"
+        },
+        "data_description": {
+          "scan_interval": "Seconden tussen metingen (5-300).",
+          "inverter_sensors": "Micro-omvormers melden zich ongeveer elke 5 minuten.",
+          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van het midden van de panelen op hetzelfde dakvlak."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "production_power": {
+        "name": "Productie"
+      },
+      "production_today": {
+        "name": "Productie vandaag"
+      },
+      "production_7days": {
+        "name": "Productie laatste 7 dagen"
+      },
+      "production_lifetime": {
+        "name": "Productie totaal"
+      },
+      "active_inverters": {
+        "name": "Actieve micro-omvormers"
+      },
+      "consumption_power": {
+        "name": "Verbruik"
+      },
+      "consumption_today": {
+        "name": "Verbruik vandaag"
+      },
+      "consumption_lifetime": {
+        "name": "Verbruik totaal"
+      },
+      "net_power": {
+        "name": "Netvermogen"
+      },
+      "last_reading": {
+        "name": "Laatste meting"
+      },
+      "token_expires": {
+        "name": "Token geldig tot"
+      },
+      "production_phase_power": {
+        "name": "Productie {phase}"
+      },
+      "production_phase_voltage": {
+        "name": "Spanning {phase}"
+      },
+      "production_phase_current": {
+        "name": "Stroom {phase}"
+      },
+      "production_phase_lifetime": {
+        "name": "Productie totaal {phase}"
+      },
+      "consumption_phase_power": {
+        "name": "Verbruik {phase}"
+      },
+      "net_phase_power": {
+        "name": "Netvermogen {phase}"
+      },
+      "inverter_power": {
+        "name": "Vermogen"
+      },
+      "inverter_last_report": {
+        "name": "Laatste melding"
+      },
+      "grid_import_today": {
+        "name": "Netafname vandaag"
+      },
+      "grid_export_today": {
+        "name": "Netlevering vandaag"
+      },
+      "grid_import_lifetime": {
+        "name": "Netafname totaal"
+      },
+      "grid_export_lifetime": {
+        "name": "Netlevering totaal"
+      },
+      "self_consumption_today": {
+        "name": "Eigen verbruik vandaag"
+      },
+      "self_sufficiency_today": {
+        "name": "Zelfvoorzienend vandaag"
+      },
+      "frequency": {
+        "name": "Netfrequentie"
+      },
+      "power_factor": {
+        "name": "Arbeidsfactor"
+      },
+      "consumption_phase_current": {
+        "name": "Stroom verbruik {phase}"
+      },
+      "inverter_max_power": {
+        "name": "Maximaal vermogen"
+      },
+      "inverter_dc_power": {
+        "name": "DC-vermogen"
+      },
+      "inverter_efficiency": {
+        "name": "Rendement"
+      },
+      "inverter_dc_voltage": {
+        "name": "DC-spanning"
+      },
+      "inverter_dc_current": {
+        "name": "DC-stroom"
+      },
+      "inverter_ac_voltage": {
+        "name": "AC-spanning"
+      },
+      "inverter_ac_current": {
+        "name": "AC-stroom"
+      },
+      "inverter_ac_frequency": {
+        "name": "AC-frequentie"
+      },
+      "inverter_temperature": {
+        "name": "Temperatuur"
+      },
+      "inverter_energy_today": {
+        "name": "Productie vandaag"
+      },
+      "inverter_energy_yesterday": {
+        "name": "Productie gisteren"
+      },
+      "inverter_energy_week": {
+        "name": "Productie deze week"
+      },
+      "inverter_energy_lifetime": {
+        "name": "Productie totaal"
+      },
+      "inverter_phase": {
+        "name": "Fase"
+      },
+      "inverter_firmware": {
+        "name": "Firmware"
+      },
+      "inverter_signal": {
+        "name": "Signaalsterkte"
+      },
+      "last_cloud_report": {
+        "name": "Laatste melding aan Enlighten"
+      },
+      "wifi_signal": {
+        "name": "Wifi-signaal"
+      },
+      "network_interface": {
+        "name": "Netwerkverbinding",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "Wifi",
+          "cellular": "Mobiel",
+          "eth0": "Ethernet",
+          "wlan0": "Wifi"
+        }
+      },
+      "panel_layout": {
+        "name": "Paneelindeling",
+        "unit_of_measurement": "panelen"
+      },
+      "inverter_performance": {
+        "name": "Prestatie t.o.v. dakvlak"
+      },
+      "inverter_performance_week": {
+        "name": "Prestatie t.o.v. dakvlak (7 dagen)"
+      }
+    },
+    "binary_sensor": {
+      "cloud_connected": {
+        "name": "Verbinding met Enlighten"
+      },
+      "export_limit": {
+        "name": "Exportlimiet actief"
+      },
+      "production_stopped": {
+        "name": "Productie gestopt"
+      },
+      "inverter_producing": {
+        "name": "Produceert"
+      },
+      "inverter_communicating": {
+        "name": "Communiceert"
+      },
+      "inverter_underperforming": {
+        "name": "Presteert onder"
+      },
+      "inverter_no_output": {
+        "name": "Geen opbrengst"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Nu verversen"
+      },
+      "renew_token": {
+        "name": "Token vernieuwen"
+      },
+      "refresh_layout": {
+        "name": "Plattegrond ophalen"
+      }
+    },
+    "switch": {
+      "production": {
+        "name": "Productie"
+      }
+    }
+  },
+  "exceptions": {
+    "needs_installer": {
+      "message": "De gateway staat dit alleen toe met een installateurstoken."
+    },
+    "no_credentials": {
+      "message": "Er is geen Enlighten e-mailadres/wachtwoord ingesteld; vul ze in via opnieuw inloggen."
+    },
+    "command_failed": {
+      "message": "De gateway accepteerde de opdracht niet: {error}"
+    },
+    "no_layout": {
+      "message": "Enlighten heeft geen plattegrond voor deze installatie."
+    }
+  },
+  "issues": {
+    "inverter_underperforming": {
+      "title": "Paneel {serial} levert minder dan zijn buren",
+      "description": "Micro-omvormer {serial} ({where}) leverde {performance}% van het midden van de andere panelen op hetzelfde dakvlak. Kijk naar schaduw, vuil of schade. Deze melding verdwijnt vanzelf als hij weer normaal presteert."
+    },
+    "inverter_no_output": {
+      "title": "Paneel {serial} levert niets",
+      "description": "Micro-omvormer {serial} ({where}) geeft al meer dan 30 minuten niets terwijl de andere panelen op hetzelfde dakvlak wel produceren. Controleer de omvormer, de stekker en het paneel."
+    },
+    "cloud_offline": {
+      "title": "Gateway {serial} heeft geen verbinding met Enlighten",
+      "description": "De gateway meldt zich al meer dan 6 uur niet bij Enlighten. Het lokaal uitlezen werkt gewoon, maar Enlighten en firmware-updates niet. Controleer de netwerkverbinding."
+    }
+  }
+}

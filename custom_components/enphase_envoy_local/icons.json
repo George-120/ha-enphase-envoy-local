@@ -1,0 +1,212 @@
+{
+  "entity": {
+    "sensor": {
+      "production_power": {
+        "default": "mdi:solar-power-variant"
+      },
+      "production_today": {
+        "default": "mdi:solar-power"
+      },
+      "production_7days": {
+        "default": "mdi:solar-power"
+      },
+      "production_lifetime": {
+        "default": "mdi:solar-power-variant-outline"
+      },
+      "production_phase_power": {
+        "default": "mdi:solar-power-variant"
+      },
+      "production_phase_lifetime": {
+        "default": "mdi:solar-power-variant-outline"
+      },
+      "active_inverters": {
+        "default": "mdi:solar-panel"
+      },
+      "consumption_power": {
+        "default": "mdi:home-lightning-bolt"
+      },
+      "consumption_today": {
+        "default": "mdi:home-lightning-bolt-outline"
+      },
+      "consumption_lifetime": {
+        "default": "mdi:home-lightning-bolt-outline"
+      },
+      "consumption_phase_power": {
+        "default": "mdi:home-lightning-bolt"
+      },
+      "net_power": {
+        "default": "mdi:transmission-tower"
+      },
+      "net_phase_power": {
+        "default": "mdi:transmission-tower"
+      },
+      "grid_import_today": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "grid_import_lifetime": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "grid_export_today": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "grid_export_lifetime": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "self_consumption_today": {
+        "default": "mdi:home-percent"
+      },
+      "self_sufficiency_today": {
+        "default": "mdi:home-battery"
+      },
+      "frequency": {
+        "default": "mdi:sine-wave"
+      },
+      "power_factor": {
+        "default": "mdi:angle-acute"
+      },
+      "last_reading": {
+        "default": "mdi:clock-check-outline"
+      },
+      "token_expires": {
+        "default": "mdi:key-chain-variant"
+      },
+      "inverter_power": {
+        "default": "mdi:solar-panel"
+      },
+      "inverter_max_power": {
+        "default": "mdi:solar-panel-large"
+      },
+      "inverter_last_report": {
+        "default": "mdi:clock-outline"
+      },
+      "inverter_dc_power": {
+        "default": "mdi:current-dc"
+      },
+      "inverter_efficiency": {
+        "default": "mdi:gauge"
+      },
+      "inverter_dc_voltage": {
+        "default": "mdi:current-dc"
+      },
+      "inverter_dc_current": {
+        "default": "mdi:current-dc"
+      },
+      "inverter_ac_voltage": {
+        "default": "mdi:current-ac"
+      },
+      "inverter_ac_current": {
+        "default": "mdi:current-ac"
+      },
+      "inverter_ac_frequency": {
+        "default": "mdi:sine-wave"
+      },
+      "inverter_energy_today": {
+        "default": "mdi:solar-power"
+      },
+      "inverter_energy_yesterday": {
+        "default": "mdi:solar-power"
+      },
+      "inverter_energy_week": {
+        "default": "mdi:solar-power"
+      },
+      "inverter_energy_lifetime": {
+        "default": "mdi:solar-power-variant-outline"
+      },
+      "inverter_phase": {
+        "default": "mdi:sine-wave"
+      },
+      "inverter_firmware": {
+        "default": "mdi:chip"
+      },
+      "inverter_signal": {
+        "default": "mdi:signal"
+      },
+      "last_cloud_report": {
+        "default": "mdi:cloud-upload-outline"
+      },
+      "network_interface": {
+        "default": "mdi:ethernet",
+        "state": {
+          "wifi": "mdi:wifi",
+          "wlan0": "mdi:wifi",
+          "cellular": "mdi:signal-cellular-3"
+        }
+      },
+      "wifi_signal": {
+        "default": "mdi:wifi"
+      },
+      "panel_layout": {
+        "default": "mdi:view-grid-outline"
+      },
+      "inverter_performance": {
+        "default": "mdi:scale-balance"
+      },
+      "inverter_performance_week": {
+        "default": "mdi:scale-balance"
+      }
+    },
+    "binary_sensor": {
+      "cloud_connected": {
+        "default": "mdi:cloud-check-outline",
+        "state": {
+          "off": "mdi:cloud-off-outline"
+        }
+      },
+      "export_limit": {
+        "default": "mdi:transmission-tower-off",
+        "state": {
+          "off": "mdi:transmission-tower-export"
+        }
+      },
+      "production_stopped": {
+        "default": "mdi:solar-power-variant",
+        "state": {
+          "on": "mdi:power-plug-off"
+        }
+      },
+      "inverter_producing": {
+        "default": "mdi:solar-panel",
+        "state": {
+          "off": "mdi:solar-panel-large"
+        }
+      },
+      "inverter_communicating": {
+        "default": "mdi:access-point-network",
+        "state": {
+          "off": "mdi:access-point-network-off"
+        }
+      },
+      "inverter_underperforming": {
+        "default": "mdi:solar-panel",
+        "state": {
+          "on": "mdi:alert-circle-outline"
+        }
+      },
+      "inverter_no_output": {
+        "default": "mdi:solar-panel",
+        "state": {
+          "on": "mdi:power-plug-off-outline"
+        }
+      }
+    },
+    "button": {
+      "refresh": {
+        "default": "mdi:refresh"
+      },
+      "renew_token": {
+        "default": "mdi:key-change"
+      },
+      "refresh_layout": {
+        "default": "mdi:view-grid-plus-outline"
+      }
+    },
+    "switch": {
+      "production": {
+        "default": "mdi:solar-power-variant",
+        "state": {
+          "off": "mdi:power-plug-off"
+        }
+      }
+    }
+  }
+}
