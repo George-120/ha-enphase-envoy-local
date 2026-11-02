@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.6.2";
+const CARD_VERSION = "1.7.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -61,6 +61,8 @@ const T = {
     no_history: "No sunshine recorded on this day",
     prev_day: "Previous day",
     next_day: "Next day",
+    pick_day: "Pick a day",
+    edit_short: "Layout",
     edit: "Arrange panels",
     save: "Save",
     cancel: "Cancel",
@@ -96,6 +98,8 @@ const T = {
     no_history: "Geen zon vastgelegd op deze dag",
     prev_day: "Vorige dag",
     next_day: "Volgende dag",
+    pick_day: "Kies een dag",
+    edit_short: "Indeling",
     edit: "Indeling aanpassen",
     save: "Opslaan",
     cancel: "Annuleren",
@@ -108,6 +112,16 @@ const T = {
     source_manual: "Zelf getekende indeling",
     save_failed: "Opslaan mislukt",
   },
+};
+
+const ICONS = {
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
+  history: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12z"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>',
+  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
 };
 
 function findLayoutEntity(hass) {
@@ -363,22 +377,40 @@ class EnphasePanelLayoutCard extends HTMLElement {
     const modeLabel = { power: "power", today: "today_mode", health: "health", temperature: "temperature", efficiency: "efficiency" };
     const toolbar = this._config.show_toolbar
       ? `<div class="toolbar">
-          <div class="modes">${MODES.map(
-            (m) => `<button class="chip" data-mode="${m}">${esc(this._t(modeLabel[m]))}</button>`
+          <div class="modes" role="tablist">${MODES.map(
+            (m) => `<button class="chip" role="tab" data-mode="${m}">${esc(this._t(modeLabel[m]))}</button>`
           ).join("")}</div>
-          <button class="chip replay-btn">▶ ${esc(this._t("replay"))}</button>
-          ${this._hass?.user?.is_admin && !editing ? `<button class="chip edit-btn">✎ ${esc(this._t("edit"))}</button>` : ""}
         </div>
         <div class="replay" hidden>
-          <div class="day-pick">
-            <button class="chip day-prev" title="${esc(this._t("prev_day"))}">‹</button>
-            <input type="date" class="day">
-            <button class="chip day-next" title="${esc(this._t("next_day"))}">›</button>
+          <div class="player-top">
+            <div class="day-pick">
+              <button class="nav day-prev" title="${esc(this._t("prev_day"))}" aria-label="${esc(this._t("prev_day"))}">${ICONS.prev}</button>
+              <label class="day-label">${ICONS.calendar}<span class="day-text">–</span><input type="date" class="day" aria-label="${esc(this._t("pick_day"))}"></label>
+              <button class="nav day-next" title="${esc(this._t("next_day"))}" aria-label="${esc(this._t("next_day"))}">${ICONS.next}</button>
+            </div>
+            <button class="live-btn"><span class="dot"></span>${esc(this._t("live"))}</button>
           </div>
-          <button class="play" aria-label="play">▶</button>
-          <input type="range" min="0" max="0" value="0" step="1">
-          <span class="clock">--:--</span>
-          <button class="chip live-btn">${esc(this._t("live"))}</button>
+          <div class="player-main">
+            <button class="play" aria-label="play">${ICONS.play}</button>
+            <div class="track">
+              <svg class="curve" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="sunfill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="rgb(255,176,32)" stop-opacity=".55"/>
+                    <stop offset="1" stop-color="rgb(255,176,32)" stop-opacity=".04"/>
+                  </linearGradient>
+                  <clipPath id="played"><rect class="played-rect" x="0" y="0" width="0" height="100"/></clipPath>
+                </defs>
+                <path class="area-all" d=""/>
+                <path class="area-done" d="" clip-path="url(#played)"/>
+                <path class="line-done" d="" clip-path="url(#played)"/>
+                <line class="cursor" x1="0" x2="0" y1="0" y2="100"/>
+              </svg>
+              <input type="range" min="0" max="0" value="0" step="1" aria-label="time">
+              <div class="ticks"><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span></div>
+            </div>
+            <span class="clock">--:--</span>
+          </div>
         </div>`
       : "";
 
@@ -386,7 +418,13 @@ class EnphasePanelLayoutCard extends HTMLElement {
       <style>${STYLE}</style>
       <ha-card>
         <div class="head">
-          ${title}
+          <div class="toprow">
+            ${title || "<span></span>"}
+            ${this._config.show_toolbar ? `<div class="actions">
+              <button class="act replay-btn">${ICONS.history}<span>${esc(this._t("replay"))}</span></button>
+              ${this._hass?.user?.is_admin && !editing ? `<button class="act edit-btn" title="${esc(this._t("edit"))}">${ICONS.edit}<span>${esc(this._t("edit_short"))}</span></button>` : ""}
+            </div>` : ""}
+          </div>
           <div class="stats">
             <div><span class="big total">–</span><span class="unit">W</span><span class="cap">${esc(this._t("now"))}</span></div>
             <div><span class="big today">–</span><span class="unit">kWh</span><span class="cap tcap">${esc(this._t("today"))}</span></div>
@@ -432,6 +470,13 @@ class EnphasePanelLayoutCard extends HTMLElement {
     };
     q(".day-prev")?.addEventListener("click", () => shiftDay(-1));
     q(".day-next")?.addEventListener("click", () => shiftDay(1));
+    q(".day-label")?.addEventListener("click", (e) => {
+      const input = q(".replay .day");
+      if (e.target !== input && input?.showPicker) {
+        e.preventDefault();
+        try { input.showPicker(); } catch (err) { input.focus(); }
+      }
+    });
     q(".replay .day")?.addEventListener("change", (e) => {
       if (!e.target.value) return;
       const [y, mo, d] = e.target.value.split("-").map(Number);
@@ -750,6 +795,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this._stopPlay();
     this._replay = null;
     q(".replay").hidden = false;
+    q(".replay-btn")?.classList.add("on");
     q(".clock").textContent = this._t("loading");
     const start = new Date(day || Date.now());
     start.setHours(0, 0, 0, 0);
@@ -763,6 +809,14 @@ class EnphasePanelLayoutCard extends HTMLElement {
     dayInput.value = `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())}`;
     dayInput.max = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
     q(".day-next").disabled = isToday;
+    const yesterday = new Date(now);
+    yesterday.setHours(0, 0, 0, 0);
+    yesterday.setDate(yesterday.getDate() - 1);
+    q(".day-text").textContent = isToday
+      ? this._t("today_mode")
+      : start.toLocaleDateString(this._locale(), { weekday: "long", day: "numeric", month: "long" });
+    q(".tcap").classList.toggle("past", !isToday);
+    this._drawCurve(null);
     const until = isToday ? Date.now() : end.getTime();
 
     // Our own power sensor, plus any other power sensor of the same
@@ -855,10 +909,48 @@ class EnphasePanelLayoutCard extends HTMLElement {
         return wh;
       });
     });
-    this._replay = { series, frames, energy, index: 0 };
+    const totals = frames.map((t) =>
+      this._modules.reduce((sum, m, i) => sum + (this._valueAtSeries(series[`#${i}`], t) || 0), 0)
+    );
+    this._replay = { series, frames, energy, totals, index: 0 };
+    this._drawCurve(totals, frames);
     q(".replay input[type=range]").max = frames.length - 1;
     this._showFrame(0);
     this._play();
+  }
+
+  _drawCurve(totals, frames) {
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const all = q(".area-all"), done = q(".area-done"), line = q(".line-done"), ticks = q(".ticks");
+    if (!all) return;
+    if (!totals || totals.length < 2) {
+      all.setAttribute("d", "");
+      done.setAttribute("d", "");
+      line.setAttribute("d", "");
+      if (ticks) ticks.innerHTML = "";
+      return;
+    }
+    const peak = Math.max(1, ...totals);
+    const n = totals.length - 1;
+    const pts = totals.map((v, i) => [(i / n) * 1000, 96 - (v / peak) * 86]);
+    const stroke = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+    const area = `${stroke}L1000,100L0,100Z`;
+    all.setAttribute("d", area);
+    done.setAttribute("d", area);
+    line.setAttribute("d", stroke);
+    // Hour ticks under the curve, placed where those hours fall.
+    if (ticks && frames) {
+      const t0 = frames[0], t1 = frames[frames.length - 1];
+      const marks = [];
+      const d = new Date(t0);
+      d.setMinutes(0, 0, 0);
+      for (d.setHours(d.getHours() + 1); d.getTime() < t1; d.setHours(d.getHours() + 1)) {
+        if (d.getHours() % 2) continue;
+        const pos = ((d.getTime() - t0) / (t1 - t0)) * 100;
+        if (pos > 4 && pos < 96) marks.push(`<span style="left:${pos.toFixed(1)}%">${String(d.getHours()).padStart(2, "0")}</span>`);
+      }
+      ticks.innerHTML = marks.join("");
+    }
   }
 
   _emptyRow(m) {
@@ -922,6 +1014,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this._paint(rows, true);
     const q = (s) => this.shadowRoot.querySelector(s);
     q(".replay input[type=range]").value = index;
+    const x = frames.length > 1 ? (index / (frames.length - 1)) * 1000 : 0;
+    q(".played-rect")?.setAttribute("width", x.toFixed(1));
+    q(".cursor")?.setAttribute("x1", x.toFixed(1));
+    q(".cursor")?.setAttribute("x2", x.toFixed(1));
     q(".clock").textContent = new Date(t).toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" });
   }
 
@@ -929,7 +1025,9 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this._stopPlay();
     if (!this._replay) return;
     if (this._replay.index >= this._replay.frames.length - 1) this._replay.index = 0;
-    this.shadowRoot.querySelector(".play").textContent = "❚❚";
+    const playBtn = this.shadowRoot.querySelector(".play");
+    playBtn.innerHTML = ICONS.pause;
+    playBtn.classList.add("playing");
     this._timer = setInterval(() => {
       if (!this._replay || this._replay.index >= this._replay.frames.length - 1) {
         this._stopPlay();
@@ -943,7 +1041,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
     const btn = this.shadowRoot?.querySelector(".play");
-    if (btn) btn.textContent = "▶";
+    if (btn) {
+      btn.innerHTML = ICONS.play;
+      btn.classList.remove("playing");
+    }
   }
 
   _stopReplay() {
@@ -951,7 +1052,11 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this._replay = null;
     this._replayDay = null;
     const cap = this.shadowRoot.querySelector(".tcap");
-    if (cap) cap.textContent = this._t("today");
+    if (cap) {
+      cap.textContent = this._t("today");
+      cap.classList.remove("past");
+    }
+    this.shadowRoot.querySelector(".replay-btn")?.classList.remove("on");
     const box = this.shadowRoot.querySelector(".replay");
     if (box) box.hidden = true;
     this.shadowRoot.querySelector(".roof")?.classList.remove("replaying");
@@ -1198,31 +1303,95 @@ const STYLE = `
   ha-card { padding: 16px; overflow: hidden; }
   .head { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
   .title { font-size: 1.15rem; font-weight: 500; }
-  .stats { display:flex; gap:22px; flex-wrap:wrap; }
+  .stats { display:flex; gap:22px; flex-wrap:wrap; align-items:baseline; }
   .stats > div { display:flex; align-items:baseline; gap:4px; }
   .stats > div[hidden] { display:none; }
-  .big { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .big { font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
   .unit { color: var(--secondary-text-color); font-size: .9rem; }
   .cap { color: var(--secondary-text-color); font-size: .8rem; margin-left: 4px; }
+  .cap.past { color: rgb(var(--sun)); background: rgba(var(--sun), .14); padding: 2px 8px; border-radius: 999px;
+              font-weight: 600; align-self: center; }
   .problems .big { color: var(--error-color, #db4437); }
-  .toolbar { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-  .modes { display:flex; gap:6px; flex-wrap:wrap; }
+
+  .toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .modes { display:inline-flex; gap:2px; padding:3px; border-radius: 999px; max-width:100%; overflow-x:auto;
+           background: rgba(127,127,127,.12); scrollbar-width: none; }
+  .modes::-webkit-scrollbar { display:none; }
+  .modes .chip { border: 0; background: transparent; color: var(--secondary-text-color); padding: 6px 13px;
+                 border-radius: 999px; white-space: nowrap; transition: background .2s, color .2s; }
+  .modes .chip:hover { color: var(--primary-text-color); }
+  .modes .chip.on { background: var(--card-background-color, #1c1c1c); color: var(--primary-text-color);
+                    box-shadow: 0 1px 3px rgba(0,0,0,.35), inset 0 0 0 1px rgba(var(--sun), .35); font-weight: 600; }
   .chip { font: inherit; font-size:.8rem; padding:4px 10px; border-radius: 14px; cursor:pointer;
           border: 1px solid var(--divider-color, rgba(127,127,127,.3)); background: transparent;
           color: var(--primary-text-color); }
   .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
-  .replay { display:flex; align-items:center; gap:10px; }
+  .toprow { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .toprow:empty, .toprow:has(> span:only-child) { display:none; }
+  .actions { display:flex; gap:6px; margin-left:auto; }
+  .act { font: inherit; font-size:.8rem; display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+         padding: 6px 12px 6px 10px; border-radius: 999px; border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+         background: transparent; color: var(--primary-text-color); transition: background .2s, border-color .2s; }
+  .act svg { width:16px; height:16px; fill: currentColor; opacity:.85; }
+  .act:hover { background: rgba(127,127,127,.12); }
+  .act.on { border-color: rgba(var(--sun), .6); color: rgb(var(--sun)); background: rgba(var(--sun), .1); }
+
+  .replay { display:flex; flex-direction:column; gap:10px; padding: 12px 14px 10px; border-radius: 16px;
+            background: linear-gradient(180deg, rgba(var(--sun), .07), rgba(127,127,127,.06));
+            border: 1px solid rgba(var(--sun), .18); animation: slide .25s ease; }
   .replay[hidden] { display:none; }
-  .replay { flex-wrap: wrap; }
-  .replay input[type=range] { flex:1 1 140px; accent-color: rgb(var(--sun)); }
-  .day-pick { display:flex; align-items:center; gap:4px; }
-  .day-pick input { font: inherit; font-size:.8rem; color: var(--primary-text-color); background: transparent;
-                    border: 1px solid var(--divider-color); border-radius: 14px; padding: 3px 8px; color-scheme: dark light; }
-  .day-pick .chip { padding: 4px 9px; }
-  .day-pick .chip:disabled { opacity:.35; cursor: default; }
-  .replay .play { width:32px; height:32px; border-radius:50%; border:0; cursor:pointer;
-                  background: rgb(var(--sun)); color:#000; font-size:.8rem; }
-  .clock { font-variant-numeric: tabular-nums; min-width: 3.5em; white-space: nowrap; color: var(--secondary-text-color); font-size:.85rem; }
+  @keyframes slide { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform:none; } }
+  .player-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .day-pick { display:flex; align-items:center; gap:2px; min-width:0; }
+  .nav { width:30px; height:30px; border-radius:50%; border:0; background:transparent; cursor:pointer;
+         color: var(--primary-text-color); display:grid; place-items:center; flex:none; }
+  .nav svg { width:20px; height:20px; fill: currentColor; }
+  .nav:hover:not(:disabled) { background: rgba(127,127,127,.15); }
+  .nav:disabled { opacity:.3; cursor: default; }
+  .day-label { position:relative; display:inline-flex; align-items:center; gap:7px; cursor:pointer; min-width:0;
+               padding: 5px 10px; border-radius: 10px; font-weight: 600; font-size: .92rem; }
+  .day-label:hover { background: rgba(127,127,127,.12); }
+  .day-label svg { width:16px; height:16px; fill: rgb(var(--sun)); flex:none; }
+  .day-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .day-text::first-letter { text-transform: uppercase; }
+  .day-label input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; border:0; padding:0;
+                     color-scheme: dark light; }
+  .live-btn { font: inherit; font-size:.78rem; font-weight:600; letter-spacing:.04em; text-transform: uppercase;
+              display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding: 5px 11px; border-radius:999px;
+              border: 1px solid var(--divider-color, rgba(127,127,127,.3)); background: transparent; color: var(--primary-text-color); }
+  .live-btn .dot { width:8px; height:8px; border-radius:50%; background: var(--error-color, #e53935);
+                   box-shadow: 0 0 0 0 rgba(229,57,53,.6); animation: pulse 1.8s infinite; }
+  .live-btn:hover { background: rgba(127,127,127,.12); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(229,57,53,.55); } 70% { box-shadow: 0 0 0 7px rgba(229,57,53,0); } 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); } }
+  .player-main { display:flex; align-items:center; gap:12px; }
+  .replay .play { width:42px; height:42px; border-radius:50%; border:0; cursor:pointer; flex:none; display:grid; place-items:center;
+                  background: rgb(var(--sun)); color:#1a1200; box-shadow: 0 4px 14px rgba(var(--sun), .35);
+                  transition: transform .15s ease, box-shadow .2s ease; }
+  .replay .play svg { width:20px; height:20px; fill: currentColor; }
+  .replay .play:not(.playing) svg { margin-left: 2px; }
+  .replay .play:hover { transform: scale(1.06); }
+  .replay .play:active { transform: scale(.96); }
+  .track { position:relative; flex:1; height:54px; min-width:120px; }
+  .curve { position:absolute; inset:0 0 14px 0; width:100%; height:calc(100% - 14px); overflow:visible; }
+  .area-all { fill: rgba(127,127,127,.18); }
+  .area-done { fill: url(#sunfill); }
+  .line-done { fill:none; stroke: rgb(var(--sun)); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .cursor { stroke: rgb(var(--sun)); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; opacity:.9; }
+  .ticks { position:absolute; left:0; right:0; bottom:0; height:12px; font-size:.65rem; color: var(--secondary-text-color); }
+  .ticks span { position:absolute; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .replay input[type=range] { -webkit-appearance:none; appearance:none; position:absolute; left:0; right:0; top:0;
+                              height:calc(100% - 14px); width:100%; margin:0; background:transparent; cursor:pointer; }
+  .replay input[type=range]::-webkit-slider-runnable-track { height:100%; background:transparent; }
+  .replay input[type=range]::-moz-range-track { height:100%; background:transparent; }
+  .replay input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+              margin-top: calc((54px - 14px) / 2 - 8px); background:#fff; border: 3px solid rgb(var(--sun));
+              box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+  .replay input[type=range]::-moz-range-thumb { width:12px; height:12px; border-radius:50%; background:#fff;
+              border: 3px solid rgb(var(--sun)); box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+  .clock { font-variant-numeric: tabular-nums; min-width: 3.2em; white-space: nowrap; text-align:right;
+           color: var(--primary-text-color); font-size:1.05rem; font-weight:600; }
+  :host([small]) .act span { display:none; }
+  :host([small]) .act { padding: 6px; }
   .roof { position: relative; margin: 0 auto; container-type: inline-size; }
   .label { position:absolute; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase;
            color: var(--secondary-text-color); white-space: nowrap; }
