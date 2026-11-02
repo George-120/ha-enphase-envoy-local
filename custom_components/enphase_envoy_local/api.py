@@ -533,6 +533,26 @@ def parse_inventory(inventory: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _power_factor(reading: dict[str, Any]) -> float | None:
+    """Power factor of a three-phase meter as active / apparent power.
+
+    The gateway's own ``pwrFactor`` for the whole meter is the *sum* of the
+    per-phase power factors (it can exceed 1), so it is recalculated here from
+    the total powers. The apparent power is summed per phase when channels are
+    present, which is the correct total for an unbalanced three-phase load.
+    """
+    channels = [c for c in reading.get("channels") or [] if isinstance(c, dict)]
+    if channels:
+        active = sum(_num(c.get("activePower")) or 0.0 for c in channels)
+        apparent = sum(_num(c.get("apparentPower")) or 0.0 for c in channels)
+    else:
+        active = _num(reading.get("activePower")) or 0.0
+        apparent = _num(reading.get("apparentPower")) or 0.0
+    if apparent < 1:
+        return None
+    return round(min(abs(active) / apparent, 1.0), 3)
+
+
 def _parse_meters(
     data: EnvoyData,
     meters: list[dict[str, Any]] | None,
@@ -555,7 +575,7 @@ def _parse_meters(
             data.grid_import_lifetime = _num(reading.get("actEnergyDlvd"))
             data.grid_export_lifetime = _num(reading.get("actEnergyRcvd"))
             data.frequency = _num(reading.get("freq"))
-            data.power_factor = _num(reading.get("pwrFactor"))
+            data.power_factor = _power_factor(reading)
         elif kind == "production" and data.frequency is None:
             data.frequency = _num(reading.get("freq"))
 

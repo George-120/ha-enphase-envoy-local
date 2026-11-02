@@ -6,7 +6,9 @@ A Home Assistant integration that reads an **Enphase IQ Gateway (Envoy)** direct
 Measurements never go through the cloud; Enlighten is only used to get (and automatically renew) the
 owner token that firmware 7 and newer require.
 
-![Panel layout card](images/panel-layout-card.png)
+![Replay of a sunny day on the panel layout card](images/day-replay.gif)
+
+*Replay of a day: the sun moves from the back to the front of the roof.*
 
 ## Features
 
@@ -20,7 +22,8 @@ actually reports, so a basic system gets a tidy device page and a fully metered 
 - **Grid import and export** (today and total) straight from the gateway's net meter — the Energy
   dashboard's grid section works without a separate P1 meter
 - Self-consumption % and self-sufficiency % today
-- Grid frequency and power factor
+- Grid frequency and power factor (calculated from active and apparent power of the grid meter;
+  the gateway's own figure adds up the three phases and can exceed 1)
 - Enlighten cloud connection, last report to Enlighten, network type and Wi-Fi signal
 - Export limit status
 - Buttons: **Refresh now**, **Renew token** and **Fetch panel layout**
@@ -50,11 +53,17 @@ actually reports, so a basic system gets a tidy device page and a fully metered 
   interpolated per minute; uses any other power sensor of the same microinverter as history fallback
 - Underperforming panels get a red outline; click a panel for its history
 
+- **Four sizes**: Small, Medium, Large and Full screen. Each size is its own entry in the card
+  picker ("Enphase panel layout – Small", …), and can be changed afterwards in the editor
+
 ```yaml
 type: custom:enphase-panel-layout-card
 title: Zonnepanelen
 mode: power        # power | today | health | temperature | efficiency
+size: large        # small | medium (default) | large | full
 ```
+
+![Panel layout card](images/panel-layout-card.png)
 
 **System summary card** (`custom:enphase-system-card`)
 - Solar → home ↔ grid with live power and animated flow, today's production, use, import and

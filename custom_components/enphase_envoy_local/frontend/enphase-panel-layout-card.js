@@ -12,15 +12,30 @@
  *   show_phase: true                               # L1/L2/L3 chip per panel
  *   show_toolbar: true                             # view buttons + replay
  *   title: My roof
- *   max_height: 70vh                               # limit on tall/wide screens
+ *   size: small | medium | large | full            # card size (default medium)
+ *   max_height: 70vh                               # override the height limit
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.4.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
 const MODES = ["power", "today", "health", "temperature", "efficiency"];
+
+// Height limit of the roof drawing and the place it takes in a sections view.
+const SIZES = {
+  small: { height: "35vh", columns: 6, cardSize: 4 },
+  medium: { height: "70vh", columns: 12, cardSize: 7 },
+  large: { height: "85vh", columns: 12, cardSize: 10 },
+  full: { height: "calc(100vh - 120px)", columns: "full", cardSize: 14 },
+};
+const SIZE_NAMES = {
+  small: ["Small", "Klein"],
+  medium: ["Medium", "Middel"],
+  large: ["Large", "Groot"],
+  full: ["Full screen", "Volledig scherm"],
+};
 
 const T = {
   en: {
@@ -105,11 +120,14 @@ class EnphasePanelLayoutCard extends HTMLElement {
   setConfig(config) {
     this._config = {
       mode: "power",
+      size: this.constructor.defaultSize || "medium",
       show_labels: true,
       show_phase: true,
       show_toolbar: true,
       ...config,
     };
+    if (!SIZES[this._config.size]) this._config.size = "medium";
+    this.toggleAttribute("small", this._config.size === "small");
     this._mode = MODES.includes(this._config.mode) ? this._config.mode : "power";
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
@@ -117,7 +135,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    return { entity: findLayoutEntity(hass) || "", mode: "power" };
+    return { entity: findLayoutEntity(hass) || "", mode: "power", size: this.defaultSize || "medium" };
   }
 
   // Visual editor (Home Assistant builds the form from this schema).
@@ -142,6 +160,18 @@ class EnphasePanelLayoutCard extends HTMLElement {
           },
         },
         {
+          name: "size",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: Object.entries(SIZE_NAMES).map(([value, [en, nl]]) => ({
+                value,
+                label: `${en} / ${nl}`,
+              })),
+            },
+          },
+        },
+        {
           type: "grid",
           name: "",
           schema: [
@@ -157,20 +187,25 @@ class EnphasePanelLayoutCard extends HTMLElement {
           title: "Title / Titel",
           entity: "Panel layout sensor / Paneelindeling-sensor",
           mode: "Start view / Startweergave",
+          size: "Size / Grootte",
           show_toolbar: "Buttons and replay / Knoppen en afspelen",
           show_labels: "Roof names / Dakvlaknamen",
           show_phase: "Phase badges / Fase-labels",
-          max_height: "Max height / Max. hoogte (70vh)",
+          max_height: "Max height / Max. hoogte (optional / optioneel)",
         })[s.name],
     };
   }
 
+  get _size() {
+    return SIZES[this._config?.size] || SIZES.medium;
+  }
+
   getCardSize() {
-    return 7;
+    return this._size.cardSize;
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return { columns: this._size.columns, min_columns: 6, rows: "auto" };
   }
 
   disconnectedCallback() {
@@ -304,7 +339,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
           </div>
           ${toolbar}
         </div>
-        <div class="roof" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || "70vh"} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
+        <div class="roof" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || this._size.height} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
         ${note}
         <div class="legend"><span class="lname"></span><span class="lmin"></span><span class="bar"></span><span class="lmax"></span></div>
       </ha-card>`;
@@ -931,6 +966,10 @@ const STYLE = `
   .panel.problem { border-color: var(--error-color, #db4437); box-shadow: inset 0 0 0 1px var(--error-color, #db4437); }
   .panel.problem .alert { display:block; }
   .panel.off .val { opacity: .75; }
+  :host([small]) .big { font-size: 1.25rem; }
+  :host([small]) .w { font-size: clamp(.6rem, 2.4cqw, 1rem); }
+  :host([small]) .val small, :host([small]) .temp { display: none; }
+  :host([small]) .phase { font-size: .5rem; padding: 0 3px; }
   .note { margin-top: 10px; font-size: .8rem; color: var(--secondary-text-color); }
   .legend { display:flex; align-items:center; gap:8px; margin-top: 12px; font-size:.75rem; color: var(--secondary-text-color); }
   .bar { flex: 1; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #0d0f12, rgb(255,176,32)); }
@@ -949,9 +988,20 @@ try {
 
 // The frontend may swap in its own element registry after loading extra
 // modules, so (re)define until the cards are known where it counts.
+const sized = (size) =>
+  class extends EnphasePanelLayoutCard {
+    static defaultSize = size;
+  };
+const LAYOUT_DESCRIPTION =
+  "Every solar panel on its place on the roof: live power, today, health and a replay of the day.";
 const CARDS = [
-  [TAG, EnphasePanelLayoutCard, "Enphase panel layout",
-   "Every solar panel on its place on the roof: live power, today, health and a replay of the day."],
+  [TAG, EnphasePanelLayoutCard, "Enphase panel layout", LAYOUT_DESCRIPTION],
+  ...Object.entries(SIZE_NAMES).map(([size, [en, nl]]) => [
+    `${TAG}-${size}`,
+    sized(size),
+    `Enphase panel layout – ${en} (${nl})`,
+    `${LAYOUT_DESCRIPTION} ${en} card.`,
+  ]),
   ["enphase-system-card", EnphaseSystemCard, "Enphase system summary",
    "Solar, home and grid at a glance, today's energy, self-consumption and status."],
 ];

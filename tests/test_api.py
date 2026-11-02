@@ -300,6 +300,26 @@ def test_meters_grid_import_export():
     assert data.grid_import_lifetime == pytest.approx(4091637.8)
     assert data.grid_export_lifetime == pytest.approx(3492825.6)
     assert data.frequency == 50.0
+    assert data.power_factor is None  # no power readings
+
+
+def test_power_factor_from_active_and_apparent_power():
+    # Real readings: the gateway reports pwrFactor 0.497, the sum of the phases.
+    meters = [{"eid": 2, "state": "enabled", "measurementType": "net-consumption"}]
+    readings = [{
+        "eid": 2, "activePower": 102.534, "apparentPower": 476.776, "pwrFactor": 0.497,
+        "channels": [
+            {"activePower": 93.118, "apparentPower": 238.173, "pwrFactor": 0.375},
+            {"activePower": 6.13, "apparentPower": 131.539, "pwrFactor": 0.055},
+            {"activePower": 4.679, "apparentPower": 110.379, "pwrFactor": 0.066},
+        ],
+    }]
+    data = api.parse_production(PRODUCTION_METERED, None, None, meters, readings)
+    assert data.power_factor == pytest.approx(0.216, abs=0.001)
+    # Exporting gives a negative active power; the factor stays positive.
+    readings[0]["channels"] = [{"activePower": -900, "apparentPower": 1000}]
+    data = api.parse_production(PRODUCTION_METERED, None, None, meters, readings)
+    assert data.power_factor == pytest.approx(0.9)
 
 
 def test_parse_home():
