@@ -1018,6 +1018,12 @@ class EnphasePanelLayoutCard extends HTMLElement {
     q(".tcap").textContent = isToday
       ? this._t("today")
       : start.toLocaleDateString(this._locale(), { weekday: "short", day: "numeric", month: "short" });
+    if (!Number.isFinite(first) && isToday && !day) {
+      // Before sunrise there is nothing to replay yet: show yesterday.
+      const prev = new Date(start);
+      prev.setDate(prev.getDate() - 1);
+      return this._startReplay(prev);
+    }
     if (!Number.isFinite(first)) {
       q(".clock").textContent = this._t("no_history");
       this._paint(this._modules.map((m) => this._emptyRow(m)), true);
