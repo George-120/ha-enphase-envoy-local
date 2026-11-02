@@ -62,7 +62,9 @@ const T = {
     prev_day: "Previous day",
     next_day: "Next day",
     pick_day: "Pick a day",
+    yesterday: "Yesterday",
     shade: "Shade",
+    shade_by_hour: "Shade per hour of the day",
     whole_day: "Whole day",
     shade_loading: "Analysing the last weeks…",
     shade_none: "Not enough history yet to find shade (needs a few days of sunshine).",
@@ -112,7 +114,9 @@ const T = {
     prev_day: "Vorige dag",
     next_day: "Volgende dag",
     pick_day: "Kies een dag",
+    yesterday: "Gisteren",
     shade: "Schaduw",
+    shade_by_hour: "Schaduw per uur van de dag",
     whole_day: "Hele dag",
     shade_loading: "De afgelopen weken worden geanalyseerd…",
     shade_none: "Nog niet genoeg geschiedenis om schaduw te vinden (een paar dagen zon nodig).",
@@ -279,6 +283,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
 
   disconnectedCallback() {
     this._stopPlay();
+    this._stopShadePlay?.();
   }
 
   set hass(hass) {
@@ -411,19 +416,30 @@ class EnphasePanelLayoutCard extends HTMLElement {
           ).join("")}</div>
         </div>
         <div class="shade-bar" hidden>
-          <span class="shade-label">${esc(this._t("whole_day"))}</span>
-          <input type="range" class="shade-hour" min="0" max="0" value="0" step="1" aria-label="hour">
-          <span class="shade-days"></span>
+          <div class="player-top">
+            <span class="sb-title">${esc(this._t("shade_by_hour"))}</span>
+            <button class="live-btn whole-day">${esc(this._t("whole_day"))}</button>
+          </div>
+          <div class="player-main">
+            <button class="play shade-play" aria-label="play">${ICONS.play}</button>
+            <div class="shade-track">
+              <input type="range" class="shade-hour" min="1" max="1" value="1" step="1" aria-label="hour">
+              <div class="shade-ticks"></div>
+            </div>
+            <span class="clock shade-label">–</span>
+          </div>
+          <div class="shade-days"></div>
         </div>
         <div class="replay" hidden>
           <div class="player-top">
             <div class="day-pick">
               <button class="nav day-prev" title="${esc(this._t("prev_day"))}" aria-label="${esc(this._t("prev_day"))}">${ICONS.prev}</button>
-              <label class="day-label">${ICONS.calendar}<span class="day-text">–</span><input type="date" class="day" aria-label="${esc(this._t("pick_day"))}"></label>
+              <button class="day-label" aria-haspopup="dialog" title="${esc(this._t("pick_day"))}">${ICONS.calendar}<span class="day-text">–</span></button>
               <button class="nav day-next" title="${esc(this._t("next_day"))}" aria-label="${esc(this._t("next_day"))}">${ICONS.next}</button>
             </div>
             <button class="live-btn"><span class="dot"></span>${esc(this._t("live"))}</button>
           </div>
+          <div class="cal" hidden role="dialog" aria-label="${esc(this._t("pick_day"))}"></div>
           <div class="player-main">
             <button class="play" aria-label="play">${ICONS.play}</button>
             <div class="track">
@@ -495,20 +511,32 @@ class EnphasePanelLayoutCard extends HTMLElement {
       b.addEventListener("click", () => {
         this._mode = b.dataset.mode;
         q(".shade-bar").hidden = this._mode !== "shade";
+        if (this._mode !== "shade") this._stopShadePlay();
+        if (this._mode === "shade" && this._replay) this._stopReplay();
         if (this._mode === "shade" && !this._shade) this._loadShade();
         if (this._replay) this._showFrame(this._replay.index);
         else this._update();
       })
     );
-    q(".replay-btn")?.addEventListener("click", () => this._startReplay());
+    q(".replay-btn")?.addEventListener("click", () => {
+      if (this._mode === "shade") {
+        this._mode = "power";
+        q(".shade-bar").hidden = true;
+        this._stopShadePlay();
+      }
+      this._startReplay();
+    });
     if (q(".shade-bar")) q(".shade-bar").hidden = this._mode !== "shade";
     if (this._mode === "shade" && !this._shade) this._loadShade();
     q(".shade-hour")?.addEventListener("input", (e) => {
-      this._shadeHour = +e.target.value;
-      this._updateShadeLabel();
-      if (this._replay) this._showFrame(this._replay.index);
-      else this._update();
+      this._stopShadePlay();
+      this._setShadeHour(+e.target.value);
     });
+    q(".whole-day")?.addEventListener("click", () => {
+      this._stopShadePlay();
+      this._setShadeHour(0);
+    });
+    q(".shade-play")?.addEventListener("click", () => (this._shadeTimer ? this._stopShadePlay() : this._playShade()));
     const shiftDay = (n) => {
       const d = new Date(this._replayDay || Date.now());
       d.setDate(d.getDate() + n);
@@ -517,17 +545,35 @@ class EnphasePanelLayoutCard extends HTMLElement {
     q(".day-prev")?.addEventListener("click", () => shiftDay(-1));
     q(".day-next")?.addEventListener("click", () => shiftDay(1));
     q(".day-label")?.addEventListener("click", (e) => {
-      const input = q(".replay .day");
-      if (e.target !== input && input?.showPicker) {
-        e.preventDefault();
-        try { input.showPicker(); } catch (err) { input.focus(); }
+      e.stopPropagation();
+      const cal = q(".cal");
+      if (cal.hidden) this._openCal();
+      else cal.hidden = true;
+    });
+    q(".cal")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const btn = e.target.closest("button");
+      if (!btn || btn.disabled) return;
+      if (btn.dataset.month) {
+        const d = new Date(this._calMonth);
+        d.setMonth(d.getMonth() + +btn.dataset.month);
+        this._calMonth = d.getTime();
+        this._renderCal();
+      } else if (btn.dataset.day) {
+        q(".cal").hidden = true;
+        this._startReplay(new Date(+btn.dataset.day));
       }
     });
-    q(".replay .day")?.addEventListener("change", (e) => {
-      if (!e.target.value) return;
-      const [y, mo, d] = e.target.value.split("-").map(Number);
-      this._startReplay(new Date(y, mo - 1, d));
-    });
+    if (!this._calBound) {
+      // The shadow root outlives rebuilds: bind these once.
+      this._calBound = true;
+      const close = () => {
+        const cal = this.shadowRoot.querySelector(".cal");
+        if (cal && !cal.hidden) cal.hidden = true;
+      };
+      this.shadowRoot.addEventListener("click", close);
+      this.shadowRoot.addEventListener("keydown", (e) => e.key === "Escape" && close());
+    }
     q(".edit-btn")?.addEventListener("click", () => this._startEdit());
     q(".live-btn")?.addEventListener("click", () => this._stopReplay());
     q(".play")?.addEventListener("click", () => (this._timer ? this._stopPlay() : this._play()));
@@ -890,10 +936,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     end.setDate(end.getDate() + 1);
     const isToday = end > new Date();
     const pad2 = (n) => String(n).padStart(2, "0");
-    const dayInput = q(".replay .day");
     const now = new Date();
-    dayInput.value = `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())}`;
-    dayInput.max = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
     q(".day-next").disabled = isToday;
     const yesterday = new Date(now);
     yesterday.setHours(0, 0, 0, 0);
@@ -1138,11 +1181,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       ratio.set(m.serial, per);
     });
     this._shade = { loading: false, ready: hourList.length > 0, hours: hourList, ratio, days: daysSeen.size };
-    const slider = this.shadowRoot.querySelector(".shade-hour");
-    if (slider) {
-      slider.max = hourList.length;
-      slider.value = this._shadeHour = 0;
-    }
+    this._shadeHour = 0;
     this._updateShadeLabel();
     if (this._replay) this._showFrame(this._replay.index);
     else this._update();
@@ -1166,17 +1205,67 @@ class EnphasePanelLayoutCard extends HTMLElement {
     return `${this._t("shade")}: ${this._t("shade_worst")} ${String(worst - 1).padStart(2, "0")}–${String(worst).padStart(2, "0")} (${Math.round(per[worst])} %)`;
   }
 
+  _setShadeHour(index) {
+    this._shadeHour = index;
+    this._updateShadeLabel();
+    this._update();
+  }
+
+  _playShade() {
+    const sh = this._shade;
+    if (!sh?.ready) return;
+    const btn = this.shadowRoot.querySelector(".shade-play");
+    btn.innerHTML = ICONS.pause;
+    btn.classList.add("playing");
+    if (!this._shadeHour || this._shadeHour >= sh.hours.length) this._setShadeHour(1);
+    this._shadeTimer = setInterval(() => {
+      if (this._shadeHour >= sh.hours.length) {
+        this._stopShadePlay();
+        this._setShadeHour(0);
+        return;
+      }
+      this._setShadeHour(this._shadeHour + 1);
+    }, 900);
+  }
+
+  _stopShadePlay() {
+    if (this._shadeTimer) clearInterval(this._shadeTimer);
+    this._shadeTimer = null;
+    const btn = this.shadowRoot?.querySelector(".shade-play");
+    if (btn) {
+      btn.innerHTML = ICONS.play;
+      btn.classList.remove("playing");
+    }
+  }
+
   _updateShadeLabel() {
     const q = (s) => this.shadowRoot.querySelector(s);
     const sh = this._shade;
-    const label = q(".shade-label"), days = q(".shade-days");
+    const label = q(".shade-label"), days = q(".shade-days"), slider = q(".shade-hour"), whole = q(".whole-day");
     if (!label) return;
-    if (!sh?.ready || !this._shadeHour) label.textContent = this._t("whole_day");
+    const ready = sh?.ready;
+    if (slider) {
+      slider.disabled = !ready;
+      slider.max = ready ? sh.hours.length : 1;
+      slider.classList.toggle("idle", !this._shadeHour);
+      if (this._shadeHour) slider.value = this._shadeHour;
+    }
+    whole?.classList.toggle("on", !this._shadeHour);
+    if (!ready) label.textContent = "–";
+    else if (!this._shadeHour) label.textContent = this._t("whole_day");
     else {
       const h = sh.hours[this._shadeHour - 1];
-      label.textContent = `${String(h - 1).padStart(2, "0")}:00 – ${String(h).padStart(2, "0")}:00`;
+      label.textContent = `${String(h - 1).padStart(2, "0")}–${String(h).padStart(2, "0")}u`;
     }
-    if (days) days.textContent = sh?.ready ? this._t("shade_info").replace("{days}", sh.days) : "";
+    const ticks = q(".shade-ticks");
+    if (ticks) {
+      ticks.innerHTML = ready
+        ? sh.hours
+            .map((h, i) => (h % 2 ? "" : `<span style="left:${sh.hours.length > 1 ? (i / (sh.hours.length - 1)) * 100 : 50}%">${String(h - 1).padStart(2, "0")}</span>`))
+            .join("")
+        : "";
+    }
+    if (days) days.textContent = ready ? this._t("shade_info").replace("{days}", sh.days) : "";
   }
 
   /* ---------------------------------------------------------- forecast */
@@ -1196,6 +1285,58 @@ class EnphasePanelLayoutCard extends HTMLElement {
     while (lo < mids.length - 2 && mids[lo + 1][0] <= t) lo++;
     const [t0, v0] = mids[lo], [t1, v1] = mids[lo + 1] || mids[lo];
     return t1 === t0 ? v0 : v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+  }
+
+  /* ----------------------------------------------------------- calendar */
+
+  _openCal() {
+    const d = new Date(this._replayDay || Date.now());
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    this._calMonth = d.getTime();
+    this._renderCal();
+    this.shadowRoot.querySelector(".cal").hidden = false;
+  }
+
+  _renderCal() {
+    const cal = this.shadowRoot.querySelector(".cal");
+    const loc = this._locale();
+    const first = new Date(this._calMonth);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = this._replayDay;
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    // Monday-first grid of six weeks.
+    const start = new Date(first);
+    start.setDate(1 - ((first.getDay() + 6) % 7));
+    const monday = new Date(2024, 0, 1); // a Monday
+    const names = [...Array(7)].map((_, i) =>
+      new Date(monday.getTime() + i * 86400000).toLocaleDateString(loc, { weekday: "short" }).replace(".", "").slice(0, 2)
+    );
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const t = d.getTime();
+      const cls = [
+        d.getMonth() !== first.getMonth() ? "out" : "",
+        t === today.getTime() ? "today" : "",
+        t === selected ? "sel" : "",
+      ].join(" ");
+      cells.push(`<button class="cd ${cls}" data-day="${t}" ${t > today.getTime() ? "disabled" : ""}>${d.getDate()}</button>`);
+    }
+    const yesterday = today.getTime() - 86400000;
+    cal.innerHTML = `
+      <div class="cal-head">
+        <button class="nav" data-month="-1" aria-label="${esc(this._t("prev_day"))}">${ICONS.prev}</button>
+        <span class="cal-title">${esc(first.toLocaleDateString(loc, { month: "long", year: "numeric" }))}</span>
+        <button class="nav" data-month="1" ${first.getTime() >= thisMonth ? "disabled" : ""}>${ICONS.next}</button>
+      </div>
+      <div class="cal-grid">${names.map((n) => `<span class="wd">${esc(n)}</span>`).join("")}${cells.join("")}</div>
+      <div class="cal-foot">
+        <button class="act" data-day="${yesterday}">${esc(this._t("yesterday"))}</button>
+        <button class="act" data-day="${today.getTime()}">${esc(this._t("today_mode"))}</button>
+      </div>`;
   }
 
   _emptyRow(m) {
@@ -1599,8 +1740,27 @@ const STYLE = `
   .day-label svg { width:16px; height:16px; fill: rgb(var(--sun)); flex:none; }
   .day-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .day-text::first-letter { text-transform: uppercase; }
-  .day-label input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; border:0; padding:0;
-                     color-scheme: dark light; }
+  .day-label { font: inherit; font-weight: 600; font-size: .92rem; color: var(--primary-text-color); border: 0; background: transparent; }
+  .replay { position: relative; z-index: 5; }
+  .cal { position:absolute; z-index: 20; top: 52px; left: 10px; width: 290px; max-width: calc(100% - 20px); padding: 12px;
+         border-radius: 20px; display:flex; flex-direction:column; gap: 8px; animation: slide .2s ease;
+         background: var(--g-fill), color-mix(in srgb, var(--card-background-color, #1c1c1c) 97%, transparent);
+         -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%);
+         border: 1px solid var(--g-edge); box-shadow: 0 24px 48px -12px rgba(0,0,0,.7), var(--g-shine); }
+  .cal[hidden] { display:none; }
+  .cal-head { display:flex; align-items:center; justify-content:space-between; }
+  .cal-title { font-weight: 650; font-size: .95rem; text-transform: capitalize; }
+  .cal-grid { display:grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal .wd { text-align:center; font-size: .68rem; color: var(--secondary-text-color); text-transform: uppercase; padding: 4px 0; }
+  .cd { font: inherit; font-size: .82rem; aspect-ratio: 1; border-radius: 50%; border: 1px solid transparent; cursor:pointer;
+        background: transparent; color: var(--primary-text-color); font-variant-numeric: tabular-nums; transition: background .15s; }
+  .cd:hover:not(:disabled) { background: rgba(255,255,255,.1); }
+  .cd.out { color: var(--secondary-text-color); opacity: .55; }
+  .cd:disabled { opacity: .22; cursor: default; }
+  .cd.today { border-color: rgba(var(--sun), .7); color: rgb(var(--sun)); font-weight: 700; }
+  .cd.sel { background: radial-gradient(120% 120% at 30% 20%, #ffd27a, rgb(var(--sun)) 55%, #e08900); color: #1a1200;
+            font-weight: 700; box-shadow: 0 4px 12px -3px rgba(var(--sun), .7); border-color: transparent; }
+  .cal-foot { display:flex; justify-content:flex-end; gap: 6px; }
   .live-btn { font: inherit; font-size:.78rem; font-weight:600; letter-spacing:.04em; text-transform: uppercase;
               display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding: 5px 11px; border-radius:999px;
               border: 1px solid var(--divider-color, rgba(127,127,127,.3)); background: transparent; color: var(--primary-text-color); }
@@ -1622,11 +1782,25 @@ const STYLE = `
   .area-done { fill: url(#sunfill); }
   .line-done { fill:none; stroke: rgb(var(--sun)); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .line-exp { fill:none; stroke: rgba(255,255,255,.7); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
-  .shade-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding: 8px 12px; border-radius: 16px; }
+  .shade-bar { display:flex; flex-direction:column; gap:10px; padding: 12px 14px 10px; border-radius: 20px;
+               background: linear-gradient(160deg, rgba(124,135,255,.14), rgba(255,255,255,.035) 55%) !important;
+               border-color: rgba(124,135,255,.3) !important; animation: slide .25s ease; }
   .shade-bar[hidden] { display:none; }
-  .shade-label { font-weight:600; font-size:.85rem; min-width: 7.5em; font-variant-numeric: tabular-nums; }
-  .shade-bar input { flex: 1 1 140px; accent-color: rgb(140,150,255); }
-  .shade-days { flex-basis:100%; font-size:.75rem; color: var(--secondary-text-color); }
+  .sb-title { font-weight: 600; font-size: .92rem; padding-left: 4px; }
+  .whole-day.on { border-color: rgba(124,135,255,.7) !important; color: #fff;
+                  background: linear-gradient(160deg, rgba(124,135,255,.45), rgba(124,135,255,.15)) !important; }
+  .shade-bar .play { width:42px; height:42px; border-radius:50%; border:0; cursor:pointer; flex:none; display:grid; place-items:center;
+                     color:#0d1033; background: radial-gradient(120% 120% at 30% 20%, #c9ceff, rgb(124,135,255) 55%, #4b55c9);
+                     box-shadow: 0 8px 22px -6px rgba(124,135,255,.7), inset 0 1px 0 rgba(255,255,255,.55); transition: transform .15s ease; }
+  .shade-bar .play svg { width:20px; height:20px; fill: currentColor; }
+  .shade-bar .play:not(.playing) svg { margin-left: 2px; }
+  .shade-bar .play:hover { transform: scale(1.06); }
+  .shade-track { position: relative; flex: 1; min-width: 120px; padding-bottom: 14px; }
+  .shade-hour { width: 100%; margin: 0; accent-color: rgb(124,135,255); cursor: pointer; }
+  .shade-hour.idle { opacity: .45; }
+  .shade-ticks { position:absolute; left:8px; right:8px; bottom:0; height:12px; font-size:.65rem; color: var(--secondary-text-color); }
+  .shade-ticks span { position:absolute; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .shade-days { font-size:.75rem; color: var(--secondary-text-color); padding-left: 4px; }
   .panel[data-tone="shade"] .glow { --c: 124,135,255; }
   .bar.shade { background: linear-gradient(90deg, #0d0f12, rgb(124,135,255)); }
   .cursor { stroke: rgb(var(--sun)); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; opacity:.9; }
