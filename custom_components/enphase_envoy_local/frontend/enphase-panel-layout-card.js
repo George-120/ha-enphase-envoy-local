@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.10.0";
+const CARD_VERSION = "1.10.2";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -575,8 +575,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
       this.shadowRoot.addEventListener("keydown", (e) => e.key === "Escape" && close());
     }
     q(".edit-btn")?.addEventListener("click", () => this._startEdit());
-    q(".live-btn")?.addEventListener("click", () => this._stopReplay());
-    q(".play")?.addEventListener("click", () => (this._timer ? this._stopPlay() : this._play()));
+    q(".replay .live-btn")?.addEventListener("click", () => this._stopReplay());
+    q(".replay .play")?.addEventListener("click", () => (this._timer ? this._stopPlay() : this._play()));
     q(".replay input[type=range]")?.addEventListener("input", (e) => {
       this._stopPlay();
       this._showFrame(+e.target.value);
@@ -928,7 +928,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this._replay = null;
     q(".replay").hidden = false;
     q(".replay-btn")?.classList.add("on");
-    q(".clock").textContent = this._t("loading");
+    q(".replay .clock").textContent = this._t("loading");
     const start = new Date(day || Date.now());
     start.setHours(0, 0, 0, 0);
     this._replayDay = start.getTime();
@@ -980,7 +980,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
         significant_changes_only: false,
       });
     } catch (err) {
-      q(".clock").textContent = String(err?.message || err);
+      q(".replay .clock").textContent = String(err?.message || err);
       return;
     }
     if (this._replayDay !== start.getTime()) return; // another day was picked meanwhile
@@ -1025,7 +1025,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       return this._startReplay(prev);
     }
     if (!Number.isFinite(first)) {
-      q(".clock").textContent = this._t("no_history");
+      q(".replay .clock").textContent = this._t("no_history");
       this._paint(this._modules.map((m) => this._emptyRow(m)), true);
       return;
     }
@@ -1410,14 +1410,14 @@ class EnphasePanelLayoutCard extends HTMLElement {
     q(".played-rect")?.setAttribute("width", x.toFixed(1));
     q(".cursor")?.setAttribute("x1", x.toFixed(1));
     q(".cursor")?.setAttribute("x2", x.toFixed(1));
-    q(".clock").textContent = new Date(t).toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" });
+    q(".replay .clock").textContent = new Date(t).toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" });
   }
 
   _play() {
     this._stopPlay();
     if (!this._replay) return;
     if (this._replay.index >= this._replay.frames.length - 1) this._replay.index = 0;
-    const playBtn = this.shadowRoot.querySelector(".play");
+    const playBtn = this.shadowRoot.querySelector(".replay .play");
     playBtn.innerHTML = ICONS.pause;
     playBtn.classList.add("playing");
     this._timer = setInterval(() => {
@@ -1432,7 +1432,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
   _stopPlay() {
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
-    const btn = this.shadowRoot?.querySelector(".play");
+    const btn = this.shadowRoot?.querySelector(".replay .play");
     if (btn) {
       btn.innerHTML = ICONS.play;
       btn.classList.remove("playing");
@@ -2084,16 +2084,15 @@ class EnphaseForecastCard extends HTMLElement {
         types: ["mean"],
       });
       const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
-      // Per hour the highest of the candidates (our sensor may be younger).
+      // One source: the sensor with the longest history (ours may be younger).
       const merged = {};
-      for (const id of ids)
-        for (const r of stats[id] || []) {
-          if (r.mean == null) continue;
-          const t = toMs(r.start) + 3600000; // keyed by hour end, like the forecast
-          merged[t] = Math.max(merged[t] || 0, r.mean);
-        }
+      const bestId = ids.reduce((b, id) => ((stats[id] || []).length > (stats[b] || []).length ? id : b), ids[0]);
+      for (const r of stats[bestId] || []) {
+        if (r.mean == null) continue;
+        merged[toMs(r.start) + 3600000] = r.mean; // keyed by hour end, like the forecast
+      }
       this._actual = merged;
-      this._actualIds = ids;
+      this._actualIds = [bestId, ...ids.filter((id) => id !== bestId)];
     } catch (err) {
       this._actual = {};
     }
