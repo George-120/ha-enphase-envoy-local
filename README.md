@@ -94,10 +94,13 @@ size: large        # small | medium (default) | large | full
   sent to Open-Meteo; turn the option off if you do not want that.
 - The integration computes the irradiance on every roof surface itself from the sun's position
   and Open-Meteo's global, direct and diffuse irradiance.
-- **Learned from your own panels** (long-term statistics of the microinverters, last 14 days):
+- **Learned from your own panels** (long-term statistics of the microinverters, up to a year,
+  with the matching weather from the Open-Meteo archive):
   the orientation and tilt of every roof surface when Enlighten does not have them (installers
   often leave 0° / south), and how many Wh each roof surface really makes per Wh/m².
-  On a real 22-panel east/west system this gave an average error of 1.3 kWh per day with no bias. Shade, dirt, panel type and
+  Backtested on a real 22-panel east/west system over 13 months, predicting every day only from the
+  days before it: 14 % average error per day (10 % in summer), no bias; the rest is the weather
+  model itself. Shade, dirt, panel type and
   inverter limits are therefore in the forecast, without any setup. Microinverter maximum power
   is respected (clipping).
 - Sensors: forecast today, tomorrow, day after tomorrow, remaining today, power now and

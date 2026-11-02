@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+# Weather archive (reanalysis, back to 1940) for learning from a long history.
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+LEARN_DAYS = 365
 STORAGE_VERSION = 1
 PAST_DAYS = 14
 FORECAST_DAYS = 4  # today in UTC can still be yesterday locally
@@ -47,8 +50,8 @@ DEFAULT_AZIMUTH = 180.0  # compass degrees, 180 = south
 PERFORMANCE_RATIO = 0.85
 ALBEDO = 0.2
 RELEARN_EVERY = timedelta(hours=20)
-AZIMUTHS = range(0, 360, 15)
-TILTS = (10, 20, 30, 40, 50, 60, 75)
+AZIMUTHS = range(0, 360, 10)
+TILTS = (10, 20, 30, 40, 50, 60)
 
 
 @dataclass
@@ -198,12 +201,19 @@ def fit_orientation(
     for end, value in production.items():
         if end in weather.ghi and sun[end][0] > 3:
             days.setdefault(dt_util.as_local(end).date().isoformat(), []).append(end)
-    good = []
-    for hours in days.values():
-        ghi_day = sum(weather.ghi[h] for h in hours)
-        clear = sum(weather.dni.get(h, 0) for h in hours)
-        if len(hours) >= 5 and ghi_day >= MIN_DAY_IRRADIANCE and clear > 0.25 * ghi_day and sum(production[h] for h in hours) > 0:
-            good.append(hours)
+    def select(min_ghi: float, min_clear: float) -> list[list[datetime]]:
+        chosen = []
+        for hours in days.values():
+            ghi_day = sum(weather.ghi[h] for h in hours)
+            clear = sum(weather.dni.get(h, 0) for h in hours)
+            if len(hours) >= 5 and ghi_day >= min_ghi and clear > min_clear * ghi_day and sum(production[h] for h in hours) > 0:
+                chosen.append(hours)
+        return chosen
+
+    # Clear days tell the orientation best; a young system may only have dull ones.
+    good = select(1500, 0.4)
+    if len(good) < 5:
+        good = select(MIN_DAY_IRRADIANCE, 0.25)
     if len(good) < 2:
         return None
     best: tuple[float, float, float] | None = None
@@ -227,6 +237,29 @@ def fit_orientation(
             if best is None or error < best[2]:
                 best = (float(tilt), float(azimuth), error)
     return best
+
+
+def _weather_from(raw: dict[str, Any]) -> Weather:
+    """Open-Meteo hourly answer -> Weather keyed by the end of the hour (UTC)."""
+    hourly = raw.get("hourly") or {}
+    times = []
+    for stamp in hourly.get("time") or []:
+        times.append(dt_util.parse_datetime(f"{stamp}:00+00:00" if len(stamp) == 16 else stamp))
+
+    def series(name: str) -> dict[datetime, float]:
+        # Open-Meteo radiation is the mean of the *preceding* hour: the label is
+        # the end of the hour (verified against real production: clearly better fit).
+        return {
+            t: max(0.0, float(v))
+            for t, v in zip(times, hourly.get(name) or [])
+            if t is not None and v is not None
+        }
+
+    return Weather(
+        ghi=series("shortwave_radiation"),
+        dni=series("direct_normal_irradiance"),
+        dhi=series("diffuse_radiation"),
+    )
 
 
 class SolarForecast:
@@ -274,7 +307,11 @@ class SolarForecast:
         if self._learned_at is None or now - self._learned_at > RELEARN_EVERY or any(
             s["label"] not in self._learned for s in surfaces
         ):
-            await self._async_learn(surfaces, weather, sun, lat, lon)
+            history = await self._async_history_weather(lat, lon, weather)
+            history_sun = await self.hass.async_add_executor_job(
+                lambda: {end: sun_position(end - timedelta(minutes=30), lat, lon) for end in history.ghi}
+            )
+            await self._async_learn(surfaces, history, history_sun, lat, lon)
         self._compute(surfaces, weather, sun, lat, lon)
         self.data.error = None
 
@@ -292,25 +329,36 @@ class SolarForecast:
             OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=20)
         ) as resp:
             resp.raise_for_status()
-            raw = await resp.json(content_type=None)
-        hourly = raw.get("hourly") or {}
-        times = []
-        for stamp in hourly.get("time") or []:
-            parsed = dt_util.parse_datetime(f"{stamp}:00+00:00" if len(stamp) == 16 else stamp)
-            times.append(parsed)
+            return _weather_from(await resp.json(content_type=None))
 
-        def series(name: str) -> dict[datetime, float]:
-            return {
-                t: max(0.0, float(v))
-                for t, v in zip(times, hourly.get(name) or [])
-                if t is not None and v is not None
-            }
-
-        return Weather(
-            ghi=series("shortwave_radiation"),
-            dni=series("direct_normal_irradiance"),
-            dhi=series("diffuse_radiation"),
-        )
+    async def _async_history_weather(self, lat: float, lon: float, recent: Weather) -> Weather:
+        """A year of weather from the archive, completed with the recent days."""
+        today = dt_util.now().date()
+        params = {
+            "latitude": f"{lat:.3f}",
+            "longitude": f"{lon:.3f}",
+            "start_date": (today - timedelta(days=LEARN_DAYS)).isoformat(),
+            "end_date": (today - timedelta(days=1)).isoformat(),
+            "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation",
+            "timezone": "UTC",
+        }
+        merged = Weather(ghi={}, dni={}, dhi={})
+        try:
+            session = async_get_clientsession(self.hass)
+            async with session.get(
+                ARCHIVE_URL, params=params, timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                resp.raise_for_status()
+                merged = _weather_from(await resp.json(content_type=None))
+        except Exception as err:  # noqa: BLE001 - fall back to the recent days only
+            _LOGGER.info("Weather archive not available, learning from recent days: %s", err)
+        now = dt_util.utcnow()
+        for name in ("ghi", "dni", "dhi"):
+            target, source = getattr(merged, name), getattr(recent, name)
+            for t, v in source.items():
+                if t <= now and t not in target:
+                    target[t] = v
+        return merged
 
     async def _async_production(self, surfaces: list[dict[str, Any]]) -> dict[str, dict[datetime, float]]:
         """Hourly production (Wh) per roof surface from the long-term statistics."""
@@ -347,7 +395,7 @@ class SolarForecast:
         if not all_ids:
             return {}
         end = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-        start = end - timedelta(days=PAST_DAYS)
+        start = end - timedelta(days=LEARN_DAYS)
         stats = await get_instance(self.hass).async_add_executor_job(
             statistics_during_period, self.hass, start, end, all_ids, "hour", None, {"mean"}
         )
@@ -457,12 +505,10 @@ class SolarForecast:
                 "factor": default_factor(self.coordinator, surface["serials"]),
                 "calibration_days": 0,
             }
-            # A microinverter cannot deliver more than its maximum (clipping).
-            cap = sum((inverters[s].max_power or 10_000) for s in surface["serials"] if s in inverters)
             calibration[surface["label"] or "all"] = {"panels": len(surface["serials"]), **info}
             plane = plane_series(weather, lat, lon, info["tilt"], info["azimuth"], sun)
             for moment, value in plane.items():
-                hourly[moment] = hourly.get(moment, 0.0) + min(value * info["factor"], cap)
+                hourly[moment] = hourly.get(moment, 0.0) + value * info["factor"]
         now = dt_util.utcnow()
         start = dt_util.as_utc(dt_util.start_of_local_day())
 
