@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.7.0";
+const CARD_VERSION = "1.8.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -62,6 +62,11 @@ const T = {
     prev_day: "Previous day",
     next_day: "Next day",
     pick_day: "Pick a day",
+    no_eff_live: "No efficiency measured yet. It is measured while the panels produce (from 10 W DC); after sunset the last value of the day stays visible.",
+    no_eff_yet: "No efficiency recorded yet at this moment of the day.",
+    no_eff_day: "No efficiency was recorded on this day. It is stored from the moment the integration was set up, so earlier days only show power, energy and health.",
+    no_data_day: "Nothing was recorded for this view on this day.",
+    no_data_yet: "No data for this view yet.",
     edit_short: "Layout",
     edit: "Arrange panels",
     save: "Save",
@@ -99,6 +104,11 @@ const T = {
     prev_day: "Vorige dag",
     next_day: "Volgende dag",
     pick_day: "Kies een dag",
+    no_eff_live: "Nog geen rendement gemeten. Dat wordt gemeten zolang de panelen produceren (vanaf 10 W DC); na zonsondergang blijft de laatste waarde van de dag staan.",
+    no_eff_yet: "Op dit moment van de dag is nog geen rendement vastgelegd.",
+    no_eff_day: "Op deze dag is geen rendement vastgelegd. Dat wordt bewaard vanaf het moment dat de integratie is ingesteld; eerdere dagen tonen alleen vermogen, opbrengst en gezondheid.",
+    no_data_day: "Voor deze weergave is op deze dag niets vastgelegd.",
+    no_data_yet: "Nog geen gegevens voor deze weergave.",
     edit_short: "Indeling",
     edit: "Indeling aanpassen",
     save: "Opslaan",
@@ -415,7 +425,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       : "";
 
     this.shadowRoot.innerHTML = `
-      <style>${STYLE}</style>
+      <style>${STYLE}${GLASS}</style>
       <ha-card>
         <div class="head">
           <div class="toprow">
@@ -436,6 +446,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
         <div class="roof${editing ? " editing" : ""}" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || this._size.height} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
         ${editing ? this._editBarHtml(arrays) : ""}
         ${note}
+        <div class="mode-note" hidden></div>
         <div class="legend"><span class="lname"></span><span class="lmin"></span><span class="bar"></span><span class="lmax"></span></div>
       </ha-card>`;
 
@@ -757,6 +768,20 @@ class EnphasePanelLayoutCard extends HTMLElement {
       temperature: [this._t("temperature"), "0 °C", "70 °C"],
       efficiency: [this._t("efficiency"), "85 %", "100 %"],
     }[mode];
+    // Say so when a view has nothing to show, instead of a roof full of dashes.
+    const needs = { efficiency: "eff", temperature: "t", today: "wh", health: "perf" }[mode];
+    const empty = needs && rows.every((r) => r[needs] == null && (needs !== "perf" || r.perfWeek == null));
+    const note = q(".mode-note");
+    if (note) {
+      note.hidden = !empty;
+      if (empty) {
+        const pastDay = replaying && this._replayDay && this._replayDay < new Date().setHours(0, 0, 0, 0);
+        note.textContent =
+          mode === "efficiency"
+            ? this._t(pastDay ? "no_eff_day" : replaying ? "no_eff_yet" : "no_eff_live")
+            : this._t(pastDay ? "no_data_day" : "no_data_yet");
+      }
+    }
     q(".lname").textContent = legends[0];
     q(".lmin").textContent = legends[1];
     q(".lmax").textContent = legends[2];
@@ -1153,7 +1178,7 @@ class EnphaseSystemCard extends HTMLElement {
   _build() {
     const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
     this.shadowRoot.innerHTML = `
-      <style>${SYSTEM_STYLE}</style>
+      <style>${SYSTEM_STYLE}${GLASS}</style>
       <ha-card>
         ${title}
         <div class="flow">
@@ -1461,6 +1486,73 @@ const STYLE = `
   .bar.efficiency { background: linear-gradient(90deg, #0d0f12, #66bb6a); }
   .bar.today { background: linear-gradient(90deg, #0d0f12, #ffc107); }
   .bar.health { background: linear-gradient(90deg, #e53935, #ffa726 60%, #4caf50); }
+`;
+
+
+/* Liquid glass look shared by both cards. */
+const GLASS = `
+  :host {
+    --g-fill: linear-gradient(155deg, rgba(255,255,255,.13) 0%, rgba(255,255,255,.045) 42%, rgba(255,255,255,.07) 100%);
+    --g-fill-soft: linear-gradient(155deg, rgba(255,255,255,.09), rgba(255,255,255,.025));
+    --g-edge: rgba(255,255,255,.16);
+    --g-shine: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.05);
+    --g-blur: blur(22px) saturate(175%);
+  }
+  ha-card {
+    position: relative; isolation: isolate; border-radius: 26px;
+    background: var(--g-fill), color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #1c1c1c)) 70%, transparent);
+    -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur);
+    border: 1px solid var(--g-edge);
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,.45), var(--g-shine);
+  }
+  ha-card::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+    background:
+      radial-gradient(120% 60% at 0% 0%, rgba(255,255,255,.14), transparent 55%),
+      radial-gradient(80% 50% at 100% 100%, rgba(var(--sun), .08), transparent 60%);
+  }
+  .modes, .act, .replay, .live-btn, .tile, .chip:not(.modes .chip), .nav:hover, .edit-sel select, .edit-sel input {
+    background: var(--g-fill-soft) !important;
+    -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur);
+    border: 1px solid var(--g-edge) !important;
+    box-shadow: var(--g-shine);
+  }
+  .modes .chip.on {
+    background: linear-gradient(160deg, rgba(255,255,255,.26), rgba(255,255,255,.08)) !important;
+    box-shadow: 0 4px 14px -4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.35), inset 0 0 0 1px rgba(255,255,255,.14);
+    color: var(--primary-text-color);
+  }
+  .act.on, .chip.primary {
+    background: linear-gradient(160deg, rgba(var(--sun), .38), rgba(var(--sun), .14)) !important;
+    border-color: rgba(var(--sun), .55) !important; color: #fff6e0;
+  }
+  .replay { border-radius: 20px; background:
+      linear-gradient(160deg, rgba(var(--sun), .10), rgba(255,255,255,.035) 55%) !important; }
+  .replay .play { box-shadow: 0 8px 22px -6px rgba(var(--sun), .7), inset 0 1px 0 rgba(255,255,255,.55); 
+    background: radial-gradient(120% 120% at 30% 20%, #ffd27a, rgb(var(--sun)) 55%, #e08900); }
+  .replay input[type=range]::-webkit-slider-thumb { background: rgba(255,255,255,.92); }
+  .cap.past { background: linear-gradient(160deg, rgba(var(--sun), .32), rgba(var(--sun), .12));
+              border: 1px solid rgba(var(--sun), .4); box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
+  .roof .panel { border-radius: 4px; }
+  .roof .panel::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: linear-gradient(140deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.04) 28%, transparent 46%,
+                transparent 70%, rgba(255,255,255,.05) 100%);
+  }
+  .mode-note { margin: 12px auto 0; max-width: 34em; padding: 10px 14px; border-radius: 16px; font-size: .82rem;
+               line-height: 1.4; color: var(--primary-text-color); text-align: center;
+               background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine);
+               -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur); }
+  .mode-note[hidden] { display: none; }
+  .legend .bar { border-radius: 999px; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+  /* System card */
+  .node svg { border: 1px solid var(--g-edge); box-shadow: var(--g-shine), 0 8px 18px -8px rgba(0,0,0,.6);
+              -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur); }
+  .tile { border-radius: 16px; }
+  .bars .track { box-shadow: inset 0 1px 2px rgba(0,0,0,.35); }
+  @media (prefers-reduced-transparency: reduce) {
+    ha-card, .modes, .act, .replay, .tile, .mode-note { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
 `;
 
 // Gradients cannot be animated, but a registered number property can.
