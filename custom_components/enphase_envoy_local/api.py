@@ -321,6 +321,18 @@ def parse_production(
         if not data.production_lifetime:
             data.production_lifetime = _num(api_v1.get("wattHoursLifetime"))
 
+    # The production CT reads a few watts of noise at night; when the
+    # microinverters themselves report nothing, production is zero.
+    if (
+        data.production_metered
+        and _num(prod_inv.get("wNow")) == 0
+        and (data.production_power or 0) < 20
+    ):
+        data.production_power = 0.0
+        for phase in data.production_phases:
+            if phase.power is not None and phase.power < 20:
+                phase.power = 0.0
+
     # CT readings drift slightly below zero at night.
     if data.production_power is not None and data.production_power < 0:
         data.production_power = 0.0

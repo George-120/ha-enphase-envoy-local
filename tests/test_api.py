@@ -351,3 +351,16 @@ def test_health_waits_for_the_sun():
         data.inverters[str(n)] = _inv(str(n), 20, 300, 2)
     health.apply_health(data, None, 90)
     assert all(i.performance is None and i.no_output is False for i in data.inverters.values())
+
+
+def test_night_noise_on_production_ct_is_zero():
+    prod = {
+        "production": [
+            {"type": "inverters", "activeCount": 22, "wNow": 0, "whLifetime": 0},
+            {"type": "eim", "activeCount": 1, "measurementType": "production", "wNow": 6.9,
+             "whLifetime": 6081286.0, "lines": [{"wNow": 6.9}, {"wNow": 0}, {"wNow": 0}]},
+        ]
+    }
+    data = api.parse_production(prod)
+    assert data.production_power == 0.0
+    assert data.production_phases[0].power == 0.0
