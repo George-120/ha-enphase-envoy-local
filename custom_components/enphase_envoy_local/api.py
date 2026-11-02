@@ -462,6 +462,21 @@ def parse_home(home: Any) -> NetworkData | None:
     return out
 
 
+def _module_serial(mod: dict[str, Any]) -> str | None:
+    """Serial number of the microinverter under a module (several spellings)."""
+    inv = mod.get("inverter")
+    candidates = []
+    if isinstance(inv, dict):
+        candidates += [inv.get("serial_num"), inv.get("serial_number"), inv.get("serial")]
+    elif isinstance(inv, (str, int)):
+        candidates.append(inv)
+    candidates += [mod.get("serial_num"), mod.get("inverter_serial"), mod.get("serial")]
+    for value in candidates:
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
 def parse_layout(raw: Any) -> dict[str, Any] | None:
     """Turn Enlighten's site_array_layout_x into absolute panel positions.
 
@@ -479,7 +494,7 @@ def parse_layout(raw: Any) -> dict[str, Any] | None:
         for mod in arr.get("modules") or []:
             if not isinstance(mod, dict):
                 continue
-            serial = (mod.get("inverter") or {}).get("serial_num")
+            serial = _module_serial(mod)
             rotation = int(_num(mod.get("rotation")) or 0) % 360
             landscape = rotation in (90, 270)
             modules.append(
@@ -614,6 +629,8 @@ class EnvoyClient:
         # that /auth/check_jwt hands out, not just the bearer token.
         self._cookies: dict[str, str] = {}
         self._cookie_token: str | None = None
+        # What happened during the last panel layout request (diagnostics).
+        self.layout_trace: list[str] = []
 
     # ------------------------------------------------------------------ info
     @property
@@ -673,9 +690,11 @@ class EnvoyClient:
 
         Logs in with the Enlighten account, finds the system that holds these
         microinverters and returns parse_layout() of it. Returns None when the
-        account has no layout for them.
+        account has no layout for them. ``layout_trace`` tells what happened.
         """
+        trace = self.layout_trace = []
         if not self.has_credentials:
+            trace.append("no Enlighten e-mail/password (token only)")
             return None
         async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as web:
             try:
@@ -688,25 +707,30 @@ class EnvoyClient:
                         login_json = json.loads(login_text)
                     except json.JSONDecodeError:
                         login_json = {}
-                    _LOGGER.debug("Layout login: HTTP %s", resp.status)
+                    trace.append(f"login HTTP {resp.status}")
                     if resp.status != 200:
                         raise EnlightenError(f"Enlighten login returned HTTP {resp.status}")
-                system_id = system_id or login_json.get("system_id")
                 xhr = {
                     "Accept": "application/json, text/plain, */*",
                     "X-Requested-With": "XMLHttpRequest",
                 }
                 if login_json.get("manager_token"):
                     xhr["e-auth-token"] = str(login_json["manager_token"])
-                candidates = [str(system_id)] if system_id else []
-                if not candidates:
-                    # Installer accounts: find the systems on the landing page.
+                candidates = [str(c) for c in (system_id, login_json.get("system_id")) if c]
+                trace.append(f"system from login: {login_json.get('system_id') or 'none'}")
+                # Accounts with more systems (or installers): also look at the
+                # systems linked from the landing page.
+                try:
                     async with web.get(f"{ENLIGHTEN_URL}/") as resp:
                         html = await resp.text()
                         landing = str(resp.url)
                     found = re.findall(r"/(?:systems|web)/(\d{4,})", landing + " " + html)
-                    candidates = list(dict.fromkeys(found))[:10]
-                    _LOGGER.debug("Layout: systems found %s", candidates)
+                    candidates += found
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    pass
+                candidates = list(dict.fromkeys(candidates))[:10]
+                trace.append(f"systems tried: {', '.join(candidates) or 'none'}")
+                fallback: dict[str, Any] | None = None
                 for candidate in candidates:
                     layout = await self._layout_of(web, candidate, xhr)
                     if layout is None:
@@ -717,11 +741,21 @@ class EnvoyClient:
                         for m in a["modules"]
                         if m["serial"]
                     }
+                    panels = sum(len(a["modules"]) for a in layout["arrays"])
+                    trace.append(
+                        f"system {candidate}: {panels} panels, "
+                        f"{len(found_serials & serials)} of {len(serials)} microinverters matched"
+                    )
                     if not serials or found_serials & serials:
                         layout["system_id"] = layout.get("system_id") or candidate
                         layout["models"] = await self._models_of(web, candidate, xhr)
                         return layout
+                    if fallback is None and not found_serials:
+                        fallback = layout
+                if fallback is not None:
+                    trace.append("layout has no serial numbers (not linked in Enlighten)")
             except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                trace.append(f"Enlighten unreachable: {err}")
                 raise EnlightenError(f"Enlighten unreachable: {err}") from err
         return None
 
@@ -735,15 +769,22 @@ class EnvoyClient:
         ):
             async with web.get(url, headers=headers) as resp:
                 body = await resp.text()
+                kind = resp.headers.get("Content-Type", "").split(";")[0]
+            short = url.replace(f"{ENLIGHTEN_URL}", "").replace(system, "{id}")
             _LOGGER.debug("Layout %s: HTTP %s", url, resp.status)
             if resp.status != 200:
+                self.layout_trace.append(f"{short}: HTTP {resp.status}")
                 continue
             try:
-                layout = parse_layout(json.loads(body))
+                raw = json.loads(body)
             except json.JSONDecodeError:
+                self.layout_trace.append(f"{short}: no JSON ({kind or 'unknown'})")
                 continue
+            layout = parse_layout(raw)
             if layout is not None:
                 return layout
+            keys = sorted(raw)[:8] if isinstance(raw, dict) else type(raw).__name__
+            self.layout_trace.append(f"{short}: no arrays (keys {keys})")
         return None
 
     async def _models_of(

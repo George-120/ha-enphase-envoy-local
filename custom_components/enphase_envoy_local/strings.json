@@ -73,7 +73,7 @@
         "data_description": {
           "scan_interval": "Seconds between readings (5-300).",
           "inverter_sensors": "Microinverters report about every 5 minutes.",
-          "underperform_threshold": "A panel is flagged when it produces less than this percentage of the median of the panels on the same roof surface."
+          "underperform_threshold": "A panel is flagged when it produces less than this percentage of what the good panels on the same roof surface produce (100 % = as good as the best panels)."
         }
       }
     }
@@ -291,12 +291,18 @@
     },
     "no_layout": {
       "message": "Enlighten has no panel layout for this system."
+    },
+    "empty_layout": {
+      "message": "The layout contains no known panels."
+    },
+    "unknown_gateway": {
+      "message": "No loaded gateway with serial number {serial}."
     }
   },
   "issues": {
     "inverter_underperforming": {
       "title": "Panel {serial} produces less than its neighbours",
-      "description": "Microinverter {serial} ({where}) produced {performance}% of the median of the other panels on the same roof surface. Check for shade, dirt or damage. This notice disappears by itself when it recovers."
+      "description": "Microinverter {serial} ({where}) produced {performance}% of what the good panels on the same roof surface produce. Check for shade, dirt or damage. This notice disappears by itself when it recovers."
     },
     "inverter_no_output": {
       "title": "Panel {serial} produces nothing",
@@ -305,6 +311,32 @@
     "cloud_offline": {
       "title": "Gateway {serial} has no connection with Enlighten",
       "description": "The gateway has not reported to Enlighten for more than 6 hours. Local readings keep working, but Enlighten and firmware updates do not. Check its network connection."
+    }
+  },
+  "services": {
+    "set_panel_layout": {
+      "name": "Save panel layout",
+      "description": "Stores a panel layout drawn by hand (used by the panel layout card; takes precedence over Enlighten).",
+      "fields": {
+        "serial": {
+          "name": "Gateway serial number",
+          "description": "Serial number of the IQ Gateway."
+        },
+        "arrays": {
+          "name": "Roof surfaces",
+          "description": "List of roof surfaces with label and modules (serial, x, y, w, h)."
+        }
+      }
+    },
+    "reset_panel_layout": {
+      "name": "Reset panel layout",
+      "description": "Forgets the drawn layout and uses Enlighten or the per-phase grouping again.",
+      "fields": {
+        "serial": {
+          "name": "Gateway serial number",
+          "description": "Serial number of the IQ Gateway."
+        }
+      }
     }
   }
 }

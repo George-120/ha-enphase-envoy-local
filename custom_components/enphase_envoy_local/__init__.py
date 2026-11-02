@@ -13,6 +13,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN
 from .coordinator import EnvoyConfigEntry, EnvoyCoordinator
 from .entity import ensure_gateway_device
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ PLATFORMS: list[Platform] = [
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the panel layout card and make dashboards load it."""
+    """Register the actions, serve the panel layout card and make dashboards load it."""
+    async_setup_services(hass)
     if getattr(hass, "http", None) is None or "frontend" not in hass.config.components:
         # No web interface (e.g. tests or a headless setup): nothing to serve.
         return True

@@ -562,13 +562,31 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
     """Panel layout for the dashboard card (positions + entity ids)."""
 
     _unrecorded_attributes = frozenset(
-        {"arrays", "source", "system_id", "serial", "gateway"}
+        {"arrays", "source", "system_id", "serial", "gateway", "layout_status"}
     )
 
     def _layout(self) -> tuple[dict, str]:
-        if self.coordinator.layout:
-            return self.coordinator.layout, "enlighten"
-        return _fallback_layout(self.coordinator.data.inverters), "phases"
+        layout = self.coordinator.layout
+        if not layout:
+            return _fallback_layout(self.coordinator.data.inverters), "phases"
+        source = layout.get("source") or "enlighten"
+        if source == "manual":
+            # Microinverters added after drawing: put them below the drawing.
+            placed = {m["serial"] for a in layout["arrays"] for m in a["modules"]}
+            missing = {
+                s: inv for s, inv in self.coordinator.data.inverters.items() if s not in placed
+            }
+            if missing:
+                bottom = max(
+                    (m["y"] + m["h"] / 2 for a in layout["arrays"] for m in a["modules"]),
+                    default=0,
+                )
+                extra = _fallback_layout(missing)["arrays"]
+                for arr in extra:
+                    for mod in arr["modules"]:
+                        mod["y"] += bottom + 120
+                layout = {**layout, "arrays": [*layout["arrays"], *extra]}
+        return layout, source
 
     @property
     def native_value(self) -> int:
@@ -645,6 +663,7 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
             "serial": self._serial,
             "gateway": {k: v for k, v in gateway.items() if v},
             "arrays": arrays,
+            "layout_status": self.coordinator.layout_status,
         }
 
 

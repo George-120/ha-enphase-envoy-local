@@ -75,3 +75,42 @@ async def test_setup_retry_when_unreachable(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_draw_and_reset_panel_layout(
+    hass: HomeAssistant, mock_client: AsyncMock, token: str
+) -> None:
+    """A layout drawn in the card is stored and used; reset goes back."""
+    entry = _entry(token)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    serial = next(iter(coordinator.data.inverters))
+
+    await hass.services.async_call(
+        DOMAIN,
+        "set_panel_layout",
+        {
+            "serial": SERIAL,
+            "arrays": [
+                {
+                    "label": "Voorkant",
+                    "modules": [
+                        {"serial": serial, "x": 50, "y": 100, "w": 200, "h": 100},
+                        {"serial": "unknown", "x": 0, "y": 0},
+                    ],
+                }
+            ],
+        },
+        blocking=True,
+    )
+    assert coordinator.layout["source"] == "manual"
+    modules = coordinator.layout["arrays"][0]["modules"]
+    assert [m["serial"] for m in modules] == [serial]
+    assert (modules[0]["w"], modules[0]["h"]) == (200, 100)
+
+    await hass.services.async_call(
+        DOMAIN, "reset_panel_layout", {"serial": SERIAL}, blocking=True
+    )
+    assert coordinator.layout is None

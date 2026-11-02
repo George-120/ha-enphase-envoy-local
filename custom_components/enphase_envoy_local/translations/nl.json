@@ -73,7 +73,7 @@
         "data_description": {
           "scan_interval": "Seconden tussen metingen (5-300).",
           "inverter_sensors": "Micro-omvormers melden zich ongeveer elke 5 minuten.",
-          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van het midden van de panelen op hetzelfde dakvlak."
+          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van wat de goede panelen op hetzelfde dakvlak opleveren (100 % = net zo goed als de beste)."
         }
       }
     }
@@ -291,12 +291,18 @@
     },
     "no_layout": {
       "message": "Enlighten heeft geen plattegrond voor deze installatie."
+    },
+    "empty_layout": {
+      "message": "De indeling bevat geen bekende panelen."
+    },
+    "unknown_gateway": {
+      "message": "Geen geladen gateway met serienummer {serial}."
     }
   },
   "issues": {
     "inverter_underperforming": {
       "title": "Paneel {serial} levert minder dan zijn buren",
-      "description": "Micro-omvormer {serial} ({where}) leverde {performance}% van het midden van de andere panelen op hetzelfde dakvlak. Kijk naar schaduw, vuil of schade. Deze melding verdwijnt vanzelf als hij weer normaal presteert."
+      "description": "Micro-omvormer {serial} ({where}) leverde {performance}% van wat de goede panelen op hetzelfde dakvlak opleveren. Kijk naar schaduw, vuil of schade. Deze melding verdwijnt vanzelf als hij weer normaal presteert."
     },
     "inverter_no_output": {
       "title": "Paneel {serial} levert niets",
@@ -305,6 +311,32 @@
     "cloud_offline": {
       "title": "Gateway {serial} heeft geen verbinding met Enlighten",
       "description": "De gateway meldt zich al meer dan 6 uur niet bij Enlighten. Het lokaal uitlezen werkt gewoon, maar Enlighten en firmware-updates niet. Controleer de netwerkverbinding."
+    }
+  },
+  "services": {
+    "set_panel_layout": {
+      "name": "Paneelindeling opslaan",
+      "description": "Slaat een zelf getekende paneelindeling op (gebruikt door de plattegrondkaart; gaat voor Enlighten).",
+      "fields": {
+        "serial": {
+          "name": "Serienummer gateway",
+          "description": "Serienummer van de IQ Gateway."
+        },
+        "arrays": {
+          "name": "Dakvlakken",
+          "description": "Lijst van dakvlakken met label en modules (serial, x, y, w, h)."
+        }
+      }
+    },
+    "reset_panel_layout": {
+      "name": "Paneelindeling herstellen",
+      "description": "Vergeet de zelf getekende indeling en gebruikt weer Enlighten of de indeling per fase.",
+      "fields": {
+        "serial": {
+          "name": "Serienummer gateway",
+          "description": "Serienummer van de IQ Gateway."
+        }
+      }
     }
   }
 }

@@ -358,8 +358,11 @@ def test_health_flags_weak_panel_on_same_roof():
     health.apply_health(data, layout, 90)
     weak, dead, good = data.inverters["3"], data.inverters["4"], data.inverters["0"]
     assert weak.array == "Roof"
-    assert weak.performance_week == pytest.approx(80.0, abs=0.1)
+    # Reference = median of the better half (6000, 6050, 6100) = 6050 Wh.
+    assert weak.performance_week == pytest.approx(79.3, abs=0.1)
     assert weak.underperforming is True
+    # Never above 100 %, the best panels are 100 %.
+    assert max(i.performance_week for i in data.inverters.values()) == 100.0
     assert good.underperforming is False
     assert dead.no_output is True
     assert good.no_output is False

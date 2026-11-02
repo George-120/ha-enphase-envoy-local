@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.5.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -53,12 +53,23 @@ const T = {
     source_phases: "Grouped per phase (no layout in Enlighten)",
     dc: "DC",
     phase: "Phase",
-    vs_roof: "of roof median",
+    vs_roof: "of the good panels",
     week: "7 days",
     problem: "needs attention",
     no_output: "no output",
     loading: "Loading history…",
     no_history: "No sunshine recorded yet today",
+    edit: "Arrange panels",
+    save: "Save",
+    cancel: "Cancel",
+    auto: "Automatic layout",
+    rotate: "Rotate",
+    roof: "Roof surface",
+    new_roof: "+ New roof surface",
+    roof_name: "Name of this roof surface",
+    edit_hint: "Drag the panels to their place. Click a panel to rotate it or move it to another roof surface.",
+    source_manual: "Layout drawn by hand",
+    save_failed: "Saving failed",
   },
   nl: {
     producing: "actief",
@@ -75,12 +86,23 @@ const T = {
     source_phases: "Gegroepeerd per fase (geen plattegrond in Enlighten)",
     dc: "DC",
     phase: "Fase",
-    vs_roof: "van het dakvlak",
+    vs_roof: "van de goede panelen",
     week: "7 dagen",
     problem: "aandacht nodig",
     no_output: "geen opbrengst",
     loading: "Geschiedenis laden…",
     no_history: "Vandaag nog geen zon vastgelegd",
+    edit: "Indeling aanpassen",
+    save: "Opslaan",
+    cancel: "Annuleren",
+    auto: "Automatische indeling",
+    rotate: "Draaien",
+    roof: "Dakvlak",
+    new_roof: "+ Nieuw dakvlak",
+    roof_name: "Naam van dit dakvlak",
+    edit_hint: "Sleep de panelen naar hun plek. Klik op een paneel om het te draaien of naar een ander dakvlak te zetten.",
+    source_manual: "Zelf getekende indeling",
+    save_failed: "Opslaan mislukt",
   },
 };
 
@@ -220,8 +242,9 @@ class EnphasePanelLayoutCard extends HTMLElement {
       this._renderMessage(this._t("no_entity"));
       return;
     }
+    this._layoutState = layout;
     const key = JSON.stringify(layout.attributes.arrays);
-    if (!this._built || key !== this._layoutKey) {
+    if (!this._built || (key !== this._layoutKey && !this._draft)) {
       this._layoutKey = key;
       this._build(layout);
     }
@@ -241,7 +264,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
   /* ------------------------------------------------------------ building */
 
   _build(layout) {
-    const arrays = layout.attributes.arrays || [];
+    const editing = !!this._draft;
+    const arrays = editing ? this._draft : layout.attributes.arrays || [];
     const modules = arrays.flatMap((a, ai) =>
       a.modules.map((m) => ({ ...m, label: a.label, arrayIndex: ai }))
     );
@@ -249,7 +273,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       this._renderMessage(this._t("no_entity"));
       return;
     }
-    const pad = 4;
+    const pad = editing ? 110 : 4;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const m of modules) {
       minX = Math.min(minX, m.x - m.w / 2);
@@ -267,6 +291,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     const labelHtml = this._config.show_labels
       ? arrays
           .map((a, i) => {
+            if (!a.modules.length) return "";
             const left = Math.min(...a.modules.map((m) => m.x - m.w / 2));
             const right = Math.max(...a.modules.map((m) => m.x + m.w / 2));
             // Arrays that touch the one above them form one roof: label only the top one.
@@ -294,7 +319,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
           m.phase && this._config.show_phase
             ? `<span class="phase" style="background:${PHASE_COLORS[m.phase] || "#616161"}">${esc(m.phase)}</span>`
             : "";
-        return `<button class="panel ${landscape ? "land" : "port"}" data-i="${i}"
+        const sel = editing && this._selected === m.serial ? " selected" : "";
+        return `<button class="panel ${landscape ? "land" : "port"}${sel}" data-i="${i}"
           style="left:${pct(left, width)};top:${pct(top, height)};width:${pct(m.w, width)};height:${pct(m.h, height)}">
             <span class="glow"></span>
             ${phase}
@@ -306,9 +332,16 @@ class EnphasePanelLayoutCard extends HTMLElement {
       .join("");
 
     const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
-    const note =
-      layout.attributes.source === "phases"
-        ? `<div class="note">${esc(this._t("source_phases"))}</div>`
+    const note = editing
+      ? ""
+      : layout.attributes.source === "manual"
+      ? `<div class="note">${esc(this._t("source_manual"))}</div>`
+      : layout.attributes.source === "phases"
+        ? `<div class="note">${esc(this._t("source_phases"))}${
+            layout.attributes.layout_status
+              ? `<br><span class="why">${esc(layout.attributes.layout_status)}</span>`
+              : ""
+          }</div>`
         : "";
     const modeLabel = { power: "power", today: "today_mode", health: "health", temperature: "temperature", efficiency: "efficiency" };
     const toolbar = this._config.show_toolbar
@@ -317,6 +350,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
             (m) => `<button class="chip" data-mode="${m}">${esc(this._t(modeLabel[m]))}</button>`
           ).join("")}</div>
           <button class="chip replay-btn">▶ ${esc(this._t("replay"))}</button>
+          ${this._hass?.user?.is_admin && !editing ? `<button class="chip edit-btn">✎ ${esc(this._t("edit"))}</button>` : ""}
         </div>
         <div class="replay" hidden>
           <button class="play" aria-label="play">▶</button>
@@ -339,15 +373,19 @@ class EnphasePanelLayoutCard extends HTMLElement {
           </div>
           ${toolbar}
         </div>
-        <div class="roof" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || this._size.height} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
+        <div class="roof${editing ? " editing" : ""}" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || this._size.height} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
+        ${editing ? this._editBarHtml(arrays) : ""}
         ${note}
         <div class="legend"><span class="lname"></span><span class="lmin"></span><span class="bar"></span><span class="lmax"></span></div>
       </ha-card>`;
 
     this._modules = modules;
+    this._geom = { minX, minY, width, height, pad };
     this._els = [...this.shadowRoot.querySelectorAll(".panel")];
+    if (editing) this._bindEditor(arrays);
     this._els.forEach((el) =>
       el.addEventListener("click", () => {
+        if (this._draft) return;
         const m = this._modules[+el.dataset.i];
         const target = this._mode === "health" ? m.performance || m.power : m.power;
         if (!target) return;
@@ -365,6 +403,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       })
     );
     q(".replay-btn")?.addEventListener("click", () => this._startReplay());
+    q(".edit-btn")?.addEventListener("click", () => this._startEdit());
     q(".live-btn")?.addEventListener("click", () => this._stopReplay());
     q(".play")?.addEventListener("click", () => (this._timer ? this._stopPlay() : this._play()));
     q(".replay input")?.addEventListener("input", (e) => {
@@ -372,6 +411,159 @@ class EnphasePanelLayoutCard extends HTMLElement {
       this._showFrame(+e.target.value);
     });
     this._built = true;
+  }
+
+  /* ------------------------------------------------------------ editor */
+
+  _startEdit() {
+    if (this._replay) this._stopReplay();
+    const arrays = this._layoutState?.attributes.arrays || [];
+    this._draft = arrays.map((a) => ({
+      label: a.label || "",
+      modules: a.modules.filter((m) => m.serial).map((m) => ({ ...m })),
+    }));
+    this._selected = null;
+    this._build(this._layoutState);
+    this._update();
+  }
+
+  _endEdit() {
+    this._draft = null;
+    this._selected = null;
+    this._build(this._layoutState);
+    this._update();
+  }
+
+  _editBarHtml(arrays) {
+    let sel = "";
+    const ai = arrays.findIndex((a) => a.modules.some((m) => m.serial === this._selected));
+    if (ai >= 0) {
+      const options = arrays
+        .map((a, i) => (a.modules.length || i === ai ? `<option value="${i}"${i === ai ? " selected" : ""}>${esc(a.label || `${this._t("roof")} ${i + 1}`)}</option>` : ""))
+        .join("");
+      sel = `<div class="edit-sel">
+          <span class="serial">${esc(this._selected)}</span>
+          <button class="chip rotate">⟳ ${esc(this._t("rotate"))}</button>
+          <label>${esc(this._t("roof"))} <select class="roof-pick">${options}<option value="new">${esc(this._t("new_roof"))}</option></select></label>
+          <input class="roof-name" placeholder="${esc(this._t("roof_name"))}" value="${esc(arrays[ai].label)}">
+        </div>`;
+    }
+    return `<div class="editbar">
+        <div class="hint">${esc(this._t("edit_hint"))}</div>
+        ${sel}
+        <div class="edit-actions">
+          <button class="chip primary save">${esc(this._t("save"))}</button>
+          <button class="chip cancel">${esc(this._t("cancel"))}</button>
+          <button class="chip auto">${esc(this._t("auto"))}</button>
+        </div>
+      </div>`;
+  }
+
+  _bindEditor(arrays) {
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const roof = q(".roof");
+    const GRID = 25;
+    const snap = (v) => Math.round(v / GRID) * GRID;
+    const find = (serial) => {
+      for (const a of arrays) {
+        const m = a.modules.find((x) => x.serial === serial);
+        if (m) return { a, m };
+      }
+      return {};
+    };
+    const place = (el, m) => {
+      const { minX, minY, width, height, pad } = this._geom;
+      el.style.left = `${((m.x - m.w / 2 - minX + pad) / width) * 100}%`;
+      el.style.top = `${((m.y - m.h / 2 - minY + pad) / height) * 100}%`;
+    };
+    this._els.forEach((el) => {
+      el.addEventListener("pointerdown", (ev) => {
+        const { m } = find(this._modules[+el.dataset.i].serial);
+        if (!m) return;
+        ev.preventDefault();
+        el.setPointerCapture(ev.pointerId);
+        const perPx = this._geom.width / roof.clientWidth;
+        const start = { x: ev.clientX, y: ev.clientY, mx: m.x, my: m.y };
+        let moved = false;
+        el.classList.add("dragging");
+        const move = (e) => {
+          const dx = e.clientX - start.x, dy = e.clientY - start.y;
+          if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+          m.x = snap(start.mx + dx * perPx);
+          m.y = snap(start.my + dy * perPx);
+          place(el, m);
+        };
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          el.classList.remove("dragging");
+          if (!moved) {
+            m.x = start.mx;
+            m.y = start.my;
+            this._selected = this._selected === m.serial ? null : m.serial;
+          }
+          this._build(this._layoutState);
+          this._update();
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+      });
+    });
+    q(".rotate")?.addEventListener("click", () => {
+      const { m } = find(this._selected);
+      if (!m) return;
+      [m.w, m.h] = [m.h, m.w];
+      this._build(this._layoutState);
+      this._update();
+    });
+    q(".roof-pick")?.addEventListener("change", (e) => {
+      const { a, m } = find(this._selected);
+      if (!m) return;
+      a.modules.splice(a.modules.indexOf(m), 1);
+      if (e.target.value === "new") {
+        arrays.push({ label: `${this._t("roof")} ${arrays.length + 1}`, modules: [m] });
+      } else {
+        arrays[+e.target.value].modules.push(m);
+      }
+      this._build(this._layoutState);
+      this._update();
+    });
+    q(".roof-name")?.addEventListener("change", (e) => {
+      const { a } = find(this._selected);
+      if (!a) return;
+      a.label = e.target.value.trim();
+      this._build(this._layoutState);
+      this._update();
+    });
+    q(".cancel").addEventListener("click", () => this._endEdit());
+    const serial = this._layoutState.attributes.serial;
+    const call = async (service, data, btn) => {
+      btn.disabled = true;
+      try {
+        await this._hass.callService("enphase_envoy_local", service, { serial, ...data });
+        this._endEdit();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = `${this._t("save_failed")}: ${err.message || err}`;
+      }
+    };
+    q(".save").addEventListener("click", (e) =>
+      call(
+        "set_panel_layout",
+        {
+          arrays: arrays
+            .filter((a) => a.modules.length)
+            .map((a) => ({
+              label: a.label,
+              modules: a.modules.map(({ serial: s, x, y, w, h }) => ({ serial: s, x, y, w, h })),
+            })),
+        },
+        e.currentTarget
+      )
+    );
+    q(".auto").addEventListener("click", (e) => call("reset_panel_layout", {}, e.currentTarget));
   }
 
   /* ------------------------------------------------------------- values */
@@ -446,8 +638,11 @@ class EnphasePanelLayoutCard extends HTMLElement {
       const v = view(r);
       this._setNumber(el.querySelector(".w"), v.value, replaying ? 0 : 1200);
       el.querySelector(".u").textContent = v.unit;
-      el.querySelector(".temp").textContent =
-        mode === "temperature" || r.t == null ? "" : `${Math.round(r.t)}°C`;
+      el.querySelector(".temp").textContent = this._draft
+        ? `…${String(r.m.serial || "").slice(-4)}`
+        : mode === "temperature" || r.t == null
+        ? ""
+        : `${Math.round(r.t)}°C`;
       el.style.setProperty("--level", v.level.toFixed(3));
       el.dataset.tone = mode === "health" ? v.hue : mode;
       el.classList.toggle("off", !r.w && mode === "power");
@@ -970,6 +1165,20 @@ const STYLE = `
   :host([small]) .w { font-size: clamp(.6rem, 2.4cqw, 1rem); }
   :host([small]) .val small, :host([small]) .temp { display: none; }
   :host([small]) .phase { font-size: .5rem; padding: 0 3px; }
+  .roof.editing { background-image: radial-gradient(rgba(255,255,255,.08) 1px, transparent 1px);
+                  background-size: 12px 12px; border-radius: 8px; outline: 1px dashed rgba(255,255,255,.15); }
+  .roof.editing .panel { cursor: grab; touch-action: none; }
+  .roof.editing .panel.dragging { cursor: grabbing; z-index: 5; opacity: .85; transition: none; }
+  .panel.selected { outline: 3px solid rgb(var(--sun)); outline-offset: 1px; z-index: 4; }
+  .editbar { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; font-size: .85rem; }
+  .editbar .hint { color: var(--secondary-text-color); }
+  .edit-sel, .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .edit-sel .serial { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .edit-sel select, .edit-sel input { font: inherit; color: var(--primary-text-color); background: var(--card-background-color);
+                  border: 1px solid var(--divider-color); border-radius: 8px; padding: 4px 8px; }
+  .edit-sel input { flex: 1 1 10em; min-width: 8em; }
+  .chip.primary { background: rgb(var(--sun)); color: #000; border-color: transparent; font-weight: 600; }
+  .note .why { opacity: .7; font-size: .72rem; word-break: break-word; }
   .note { margin-top: 10px; font-size: .8rem; color: var(--secondary-text-color); }
   .legend { display:flex; align-items:center; gap:8px; margin-top: 12px; font-size:.75rem; color: var(--secondary-text-color); }
   .bar { flex: 1; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #0d0f12, rgb(255,176,32)); }

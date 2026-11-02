@@ -53,5 +53,11 @@ async def async_get_config_entry_diagnostics(
         "last_update_success": coordinator.last_update_success,
         "raw": coordinator.data.raw if coordinator.data else None,
         "inverter_count": len(coordinator.data.inverters) if coordinator.data else 0,
+        "layout": {
+            "source": "enlighten" if coordinator.layout else "phases",
+            "fetched": (coordinator.layout or {}).get("fetched"),
+            "status": coordinator.layout_status,
+            "trace": client.layout_trace,
+        },
         "probe": await client.async_probe(PROBE_PATHS),
     }

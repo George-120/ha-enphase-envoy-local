@@ -50,7 +50,7 @@ actually reports, so a basic system gets a tidy device page and a fully metered 
 - Producing and communicating status, phase (L1–L3), **firmware**, signal strength, status flags
 
 **Panel health**
-- Every panel is compared with the median of the other panels on the same roof surface
+- Every panel is compared with the good panels on the same roof surface (100 % = as good as the best; never above 100 %)
   (today and over 7 days): sensors *Performance vs. roof* (%), *Underperforming* and *No output*
 - Repair notices (Settings → Repairs) for a panel that keeps underperforming, a panel that gives
   nothing for 30 minutes while its neighbours produce, and a gateway that lost Enlighten for 6 hours;
@@ -64,6 +64,11 @@ actually reports, so a basic system gets a tidy device page and a fully metered 
 - **Replay the day**: a slider and play button show the sun moving over the roof, smoothly
   interpolated per minute; uses any other power sensor of the same microinverter as history fallback
 - Underperforming panels get a red outline; click a panel for its history
+- **Arrange the panels yourself** (✎ *Arrange panels*, admins only): drag every panel to its place,
+  click one to rotate it or to put it on another (named) roof surface, and save. Handy when the
+  installer never drew the layout in Enlighten; the drawn layout is stored in the integration, used
+  by every card and by the panel health per roof surface. *Automatic layout* goes back to Enlighten.
+- When there is no Enlighten layout, the card shows why (for example "token only")
 
 - **Four sizes**: Small, Medium, Large and Full screen. Each size is its own entry in the card
   picker ("Enphase panel layout – Small", …), and can be changed afterwards in the editor

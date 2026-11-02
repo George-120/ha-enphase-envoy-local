@@ -104,6 +104,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         )
         self._daily: dict = {}
         self.layout: dict | None = None
+        self.layout_status: str | None = None
         self._alerts = AlertTracker()
         self._issues: set[str] = set()
         self._layout_store: Store[dict] = Store(
@@ -368,7 +369,12 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
     @callback
     def async_schedule_layout_refresh(self) -> None:
         """Fetch the panel layout in the background when it is missing or old."""
+        if (self.layout or {}).get("source") == "manual":
+            self.layout_status = "manual"
+            return
         if not self.client.has_credentials:
+            if not self.layout:
+                self.layout_status = "no Enlighten e-mail/password (token only)"
             return
         fetched = (self.layout or {}).get("fetched")
         if fetched and dt_util.utcnow() - dt_util.parse_datetime(fetched) < LAYOUT_MAX_AGE:
@@ -383,15 +389,65 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             layout = await self.client.async_fetch_layout(serials)
         except EnvoyError as err:
             _LOGGER.info("Panel layout not available from Enlighten: %s", err)
+            self.layout_status = "; ".join(self.client.layout_trace) or str(err)
+            self.async_update_listeners()
             return False
         if layout is None:
-            _LOGGER.info("Enlighten has no panel layout for this system")
+            self.layout_status = "; ".join(self.client.layout_trace)
+            _LOGGER.info("Enlighten has no panel layout for this system: %s", self.layout_status)
+            self.async_update_listeners()
             return False
+        self.layout_status = "ok"
         layout["fetched"] = dt_util.utcnow().isoformat()
         self.layout = layout
         await self._layout_store.async_save(layout)
         self.async_update_listeners()
         return True
+
+    async def async_set_manual_layout(self, arrays: list[dict]) -> None:
+        """Store a layout the user drew in the card; it wins over Enlighten."""
+        known = set(self.data.inverters) if self.data else set()
+        clean, seen = [], set()
+        for arr in arrays:
+            modules = []
+            for mod in arr.get("modules") or []:
+                serial = str(mod.get("serial") or "")
+                if serial not in known or serial in seen:
+                    continue
+                seen.add(serial)
+                w, h = (200, 100) if float(mod.get("w", 100)) > float(mod.get("h", 200)) else (100, 200)
+                modules.append(
+                    {
+                        "serial": serial,
+                        "x": round(float(mod.get("x", 0)), 1),
+                        "y": round(float(mod.get("y", 0)), 1),
+                        "w": w,
+                        "h": h,
+                    }
+                )
+            if modules:
+                clean.append({"label": str(arr.get("label") or "")[:40], "modules": modules})
+        if not clean:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="empty_layout"
+            )
+        self.layout = {
+            "source": "manual",
+            "system_id": (self.layout or {}).get("system_id"),
+            "arrays": clean,
+            "fetched": dt_util.utcnow().isoformat(),
+        }
+        self.layout_status = "manual"
+        await self._layout_store.async_save(self.layout)
+        self.async_update_listeners()
+
+    async def async_reset_layout(self) -> None:
+        """Forget the drawn layout and use Enlighten (or the phase grouping) again."""
+        self.layout = None
+        self.layout_status = None
+        await self._layout_store.async_remove()
+        self.async_update_listeners()
+        self.async_schedule_layout_refresh()
 
     async def async_refresh_layout(self) -> None:
         """Fetch the panel layout now (button)."""

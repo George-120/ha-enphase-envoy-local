@@ -1,0 +1,18 @@
+set_panel_layout:
+  fields:
+    serial:
+      required: true
+      example: "122017040437"
+      selector:
+        text:
+    arrays:
+      required: true
+      selector:
+        object:
+reset_panel_layout:
+  fields:
+    serial:
+      required: true
+      example: "122017040437"
+      selector:
+        text:

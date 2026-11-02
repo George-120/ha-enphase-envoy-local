@@ -208,5 +208,13 @@
         }
       }
     }
+  },
+  "services": {
+    "set_panel_layout": {
+      "service": "mdi:solar-panel"
+    },
+    "reset_panel_layout": {
+      "service": "mdi:restore"
+    }
   }
 }

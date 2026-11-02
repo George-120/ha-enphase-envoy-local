@@ -1,8 +1,12 @@
 """Panel health: compare every microinverter with its neighbours.
 
 Panels on the same roof surface (array in the Enlighten layout) get the same
-sun, so a panel that keeps producing clearly less than the median of its
-neighbours has a problem: shade, dirt, a broken panel or a failing inverter.
+sun, so a panel that keeps producing clearly less than the good panels next
+to it has a problem: shade, dirt, a broken panel or a failing inverter.
+
+The reference is the median of the better half of the roof surface, so one
+exceptionally good panel does not make all others look bad, and the score is
+capped at 100 %: a panel cannot be healthier than healthy.
 """
 
 from __future__ import annotations
@@ -28,10 +32,16 @@ def array_of(layout: dict | None) -> dict[str, str]:
     return out
 
 
-def _ratio(value: float | None, med: float) -> float | None:
-    if value is None or not med:
+def _ratio(value: float | None, ref: float) -> float | None:
+    if value is None or not ref:
         return None
-    return round(value / med * 100, 1)
+    return round(min(value / ref * 100, 100.0), 1)
+
+
+def _reference(values: list[float]) -> float:
+    """Median of the better half: what a good panel on this roof makes."""
+    mid = median(values)
+    return median([v for v in values if v >= mid])
 
 
 def apply_health(data: EnvoyData, layout: dict | None, threshold: float) -> None:
@@ -50,8 +60,12 @@ def apply_health(data: EnvoyData, layout: dict | None, threshold: float) -> None
             values = [getattr(i, attr) for i in members if getattr(i, attr) is not None]
             return median(values) if len(values) >= MIN_GROUP else 0.0
 
-        today, yesterday = med("energy_today"), med("energy_yesterday")
-        week, power = med("energy_week"), med("power")
+        def ref(attr: str) -> float:
+            values = [getattr(i, attr) for i in members if getattr(i, attr) is not None]
+            return _reference(values) if len(values) >= MIN_GROUP else 0.0
+
+        today, yesterday = ref("energy_today"), ref("energy_yesterday")
+        week, power = ref("energy_week"), med("power")
         for inv in members:
             if today >= MIN_TODAY_WH:
                 inv.performance = _ratio(inv.energy_today, today)
