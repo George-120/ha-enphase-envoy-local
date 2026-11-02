@@ -86,6 +86,10 @@ title: Zonnepanelen
 
 ### HACS (recommended)
 
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=George-120&repository=ha-enphase-envoy-local&category=integration)
+
+Or by hand:
+
 1. HACS → ⋮ → **Custom repositories** → add this repository's URL, category **Integration**
 2. Search for **Enphase Envoy Local**, download it and restart Home Assistant
 3. **Settings → Devices & services → Add integration → Enphase Envoy Local**
