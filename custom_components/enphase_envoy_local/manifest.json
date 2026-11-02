@@ -24,7 +24,7 @@
     "custom_components.enphase_envoy_local"
   ],
   "requirements": [],
-  "version": "1.3.0",
+  "version": "1.3.2",
   "zeroconf": [
     {
       "type": "_enphase-envoy._tcp.local."

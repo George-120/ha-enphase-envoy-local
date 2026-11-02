@@ -15,8 +15,14 @@ jobs:
       - name: Set version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # Home Assistant refuses to load an integration with an invalid version.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-]?(a|b|rc|dev)[0-9]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a valid version (expected vX.Y.Z)"
+            exit 1
+          fi
           jq --arg v "$VERSION" '.version = $v' custom_components/enphase_envoy_local/manifest.json > m.json
           mv m.json custom_components/enphase_envoy_local/manifest.json
+          grep -q "\"version\": \"$VERSION\"" custom_components/enphase_envoy_local/manifest.json
       - name: Build zip
         run: cd custom_components/enphase_envoy_local && zip -r ../../enphase_envoy_local.zip . -x "__pycache__/*"
       - uses: softprops/action-gh-release@v2
