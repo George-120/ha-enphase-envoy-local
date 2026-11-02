@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.9.0";
+const CARD_VERSION = "1.10.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -147,6 +147,9 @@ const ICONS = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
 };
+
+// Other W sensors of a microinverter that are not its AC power.
+const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max)/i;
 
 function findLayoutEntity(hass) {
   return Object.keys(hass.states).find(
@@ -898,7 +901,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
             id !== m.power &&
             id.startsWith("sensor.") &&
             id.includes(m.serial) &&
-            st.attributes.unit_of_measurement === "W"
+            st.attributes.unit_of_measurement === "W" &&
+            !SKIP_POWER.test(id)
           ) ids.push(id);
         }
       }
@@ -1044,7 +1048,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       const ids = m.power ? [m.power] : [];
       if (m.serial) {
         for (const [id, st] of Object.entries(hass.states)) {
-          if (id !== m.power && id.startsWith("sensor.") && id.includes(m.serial) && st.attributes.unit_of_measurement === "W")
+          if (id !== m.power && id.startsWith("sensor.") && id.includes(m.serial) && st.attributes.unit_of_measurement === "W" && !SKIP_POWER.test(id))
             ids.push(id);
         }
       }
@@ -1713,6 +1717,7 @@ const FT = {
     no_forecast: "No forecast yet. Turn on 'Solar forecast' in the options of Enphase Envoy Local (on by default) and wait a minute.",
     calibrated: "Calibrated on {n} sunny days of your own system", not_calibrated: "Not calibrated yet: becomes accurate after the first sunny day",
     peak: "Peak", now: "now", source: "Weather: Open-Meteo",
+    compass: "N,NNE,NE,ENE,E,ESE,SE,SSE,S,SSW,SW,WSW,W,WNW,NW,NNW", learned: "learned from your panels", assumed: "assumed", roof: "Roof",
   },
   nl: {
     title: "Opbrengstverwachting", yesterday: "Gisteren", today: "Vandaag", tomorrow: "Morgen", day_after: "Overmorgen",
@@ -1720,6 +1725,7 @@ const FT = {
     no_forecast: "Nog geen verwachting. Zet 'Opbrengstverwachting' aan in de opties van Enphase Envoy Local (staat standaard aan) en wacht een minuut.",
     calibrated: "Gekalibreerd op {n} zonnige dagen van je eigen installatie", not_calibrated: "Nog niet gekalibreerd: wordt nauwkeurig na de eerste zonnige dag",
     peak: "Piek", now: "nu", source: "Weer: Open-Meteo",
+    compass: "N,NNO,NO,ONO,O,OZO,ZO,ZZO,Z,ZZW,ZW,WZW,W,WNW,NW,NNW", learned: "geleerd van je panelen", assumed: "aangenomen", roof: "Dak",
   },
 };
 
@@ -1832,6 +1838,7 @@ class EnphaseForecastCard extends HTMLElement {
           <span><i class="lg-act"></i>${esc(this._t("actual"))}</span>
           <span class="calib"></span>
         </div>
+        <div class="orient"></div>
         <div class="msg" hidden>${esc(this._t("no_forecast"))}</div>
       </ha-card>`;
     this.shadowRoot.querySelectorAll(".day").forEach((b) =>
@@ -1999,6 +2006,15 @@ class EnphaseForecastCard extends HTMLElement {
     const cal = this._fc?.attributes.calibration || {};
     const n = Math.min(...Object.values(cal).map((c) => c.calibration_days ?? 0));
     q(".calib").textContent = Number.isFinite(n) && n > 0 ? this._t("calibrated").replace("{n}", n) : this._t("not_calibrated");
+    const dirs = this._t("compass").split(",");
+    q(".orient").innerHTML = Object.entries(cal)
+      .map(([label, c]) => {
+        if (c.azimuth == null) return "";
+        const dir = dirs[Math.round(((c.azimuth % 360) / 22.5)) % 16];
+        const how = c.orientation === "learned" ? this._t("learned") : c.orientation === "enlighten" ? "Enlighten" : this._t("assumed");
+        return `<span><b>${esc(label === "all" ? this._t("roof") : label)}</b> ${esc(dir)} · ${Math.round(c.tilt)}° <i>${esc(how)}</i></span>`;
+      })
+      .join("");
   }
 
   _hover(e) {
@@ -2078,6 +2094,9 @@ const FORECAST_STYLE = `
   .lg-exp, .lg-act { display:inline-block; width: 16px; height: 0; margin-right: 6px; vertical-align: middle; }
   .lg-exp { border-top: 2px dashed rgba(255,255,255,.75); }
   .lg-act { border-top: 3px solid rgb(var(--sun)); }
+  .orient { display:flex; flex-wrap:wrap; gap: 6px 14px; margin-top: 10px; font-size: .72rem; color: var(--secondary-text-color); }
+  .orient b { color: var(--primary-text-color); font-weight: 600; }
+  .orient i { font-style: normal; opacity: .7; }
   .msg { padding: 14px; border-radius: 16px; font-size: .85rem; background: var(--g-fill-soft); border: 1px solid var(--g-edge); }
   .msg[hidden] { display:none; }
   @media (max-width: 460px) { .days { grid-template-columns: repeat(2, 1fr); } }
