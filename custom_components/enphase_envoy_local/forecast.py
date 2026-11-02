@@ -41,6 +41,7 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 # Weather archive (reanalysis, back to 1940) for learning from a long history.
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 LEARN_DAYS = 365
+MODEL = 2  # bump when the learning changes: everything is learned again
 STORAGE_VERSION = 1
 PAST_DAYS = 14
 FORECAST_DAYS = 4  # today in UTC can still be yesterday locally
@@ -292,6 +293,8 @@ class SolarForecast:
             self._learned = stored.get("surfaces") or {}
             at = stored.get("learned_at")
             self._learned_at = dt_util.parse_datetime(at) if at else None
+            if stored.get("model") != MODEL:
+                self._learned_at = None
             self._loaded = True
         lat, lon = self.hass.config.latitude, self.hass.config.longitude
         if lat is None or lon is None or not self.coordinator.data:
@@ -483,7 +486,7 @@ class SolarForecast:
         self._learned = learned
         self._learned_at = dt_util.utcnow()
         await self._store.async_save(
-            {"surfaces": learned, "learned_at": self._learned_at.isoformat()}
+            {"surfaces": learned, "learned_at": self._learned_at.isoformat(), "model": MODEL}
         )
 
     def _compute(
