@@ -300,7 +300,8 @@ INVERTER_SENSORS: tuple[InverterSensorDescription, ...] = (
     _inv("dc_power", lambda i: i.dc_power, UnitOfPower.WATT, SensorDeviceClass.POWER, 0),
     _inv(
         "efficiency",
-        lambda i: i.efficiency,
+        # Live in daylight; after sunset the last daylight value stays.
+        lambda i: i.efficiency if i.efficiency is not None else i.last_efficiency,
         PERCENTAGE,
         None,
         1,
@@ -560,7 +561,9 @@ def _fallback_layout(inverters: dict[str, InverterData]) -> dict:
 class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
     """Panel layout for the dashboard card (positions + entity ids)."""
 
-    _unrecorded_attributes = frozenset({"arrays", "source", "system_id"})
+    _unrecorded_attributes = frozenset(
+        {"arrays", "source", "system_id", "serial", "gateway"}
+    )
 
     def _layout(self) -> tuple[dict, str]:
         if self.coordinator.layout:
@@ -615,9 +618,32 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                     }
                 )
             arrays.append({"label": arr.get("label"), "modules": modules})
+        gateway_keys = {
+            "production_power": "sensor",
+            "production_today": "sensor",
+            "production_lifetime": "sensor",
+            "consumption_power": "sensor",
+            "consumption_today": "sensor",
+            "net_power": "sensor",
+            "grid_import_today": "sensor",
+            "grid_export_today": "sensor",
+            "self_consumption_today": "sensor",
+            "self_sufficiency_today": "sensor",
+            "active_inverters": "sensor",
+            "token_expires": "sensor",
+            "last_reading": "sensor",
+            "cloud_connected": "binary_sensor",
+            "refresh": "button",
+        }
+        gateway = {
+            key: registry.async_get_entity_id(platform, DOMAIN, f"{self._serial}_{key}")
+            for key, platform in gateway_keys.items()
+        }
         return {
             "source": source,
             "system_id": layout.get("system_id"),
+            "serial": self._serial,
+            "gateway": {k: v for k, v in gateway.items() if v},
             "arrays": arrays,
         }
 

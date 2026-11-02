@@ -56,6 +56,17 @@ title: Zonnepanelen
 mode: power        # power | today | health | temperature | efficiency
 ```
 
+**System summary card** (`custom:enphase-system-card`)
+- Solar → home ↔ grid with live power and animated flow, today's production, use, import and
+  export, self-consumption and self-sufficiency bars, panels producing, problems, Enlighten status
+
+Both cards appear in the card picker (search for "Enphase") and have a visual editor.
+
+```yaml
+type: custom:enphase-system-card
+title: Zonnepanelen
+```
+
 **Smart about firmware quirks**
 - Firmware 8 reports the lifetime counter as "today" and "last 7 days". The integration detects
   this, uses the microinverters' own day counters and keeps its own day counters (stored on disk,

@@ -102,6 +102,8 @@ class InverterData:
     performance_week: float | None = None
     underperforming: bool | None = None
     no_output: bool | None = None
+    # Last efficiency measured in daylight, kept for the evening.
+    last_efficiency: float | None = None
 
     @property
     def dc_power(self) -> float | None:

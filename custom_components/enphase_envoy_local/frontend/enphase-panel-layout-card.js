@@ -16,7 +16,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -118,6 +118,51 @@ class EnphasePanelLayoutCard extends HTMLElement {
 
   static getStubConfig(hass) {
     return { entity: findLayoutEntity(hass) || "", mode: "power" };
+  }
+
+  // Visual editor (Home Assistant builds the form from this schema).
+  static getConfigForm() {
+    return {
+      schema: [
+        { name: "title", selector: { text: {} } },
+        { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
+        {
+          name: "mode",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: [
+                { value: "power", label: "Now / Nu" },
+                { value: "today", label: "Today / Vandaag" },
+                { value: "health", label: "Health / Gezondheid" },
+                { value: "temperature", label: "Temperature / Temperatuur" },
+                { value: "efficiency", label: "Efficiency / Rendement" },
+              ],
+            },
+          },
+        },
+        {
+          type: "grid",
+          name: "",
+          schema: [
+            { name: "show_toolbar", selector: { boolean: {} } },
+            { name: "show_labels", selector: { boolean: {} } },
+            { name: "show_phase", selector: { boolean: {} } },
+            { name: "max_height", selector: { text: {} } },
+          ],
+        },
+      ],
+      computeLabel: (s) =>
+        ({
+          title: "Title / Titel",
+          entity: "Panel layout sensor / Paneelindeling-sensor",
+          mode: "Start view / Startweergave",
+          show_toolbar: "Buttons and replay / Knoppen en afspelen",
+          show_labels: "Roof names / Dakvlaknamen",
+          show_phase: "Phase badges / Fase-labels",
+          max_height: "Max height / Max. hoogte (70vh)",
+        })[s.name],
+    };
   }
 
   getCardSize() {
@@ -584,6 +629,240 @@ class EnphasePanelLayoutCard extends HTMLElement {
   }
 }
 
+
+/* ===================================================================
+ * System summary card: sun -> house <- grid, today's numbers, status.
+ *
+ *   type: custom:enphase-system-card
+ *   entity: sensor.envoy_<serial>_panel_layout   # optional, found automatically
+ *   title: Zonnepanelen
+ * =================================================================== */
+
+const ST = {
+  en: {
+    solar: "Solar", home: "Home", grid: "Grid", import: "from grid", export: "to grid",
+    today: "Today", produced: "Produced", used: "Used", imported: "Imported", exported: "Exported",
+    selfuse: "Self-consumption", sufficient: "Self-sufficiency", panels: "Panels producing",
+    attention: "Need attention", cloud: "Enlighten", online: "connected", offline: "offline",
+    token: "Token valid until", total: "Total produced", none: "all good",
+  },
+  nl: {
+    solar: "Zon", home: "Huis", grid: "Net", import: "van het net", export: "naar het net",
+    today: "Vandaag", produced: "Opgewekt", used: "Verbruikt", imported: "Afgenomen", exported: "Teruggeleverd",
+    selfuse: "Eigen verbruik", sufficient: "Zelfvoorzienend", panels: "Panelen actief",
+    attention: "Aandacht nodig", cloud: "Enlighten", online: "verbonden", offline: "geen verbinding",
+    token: "Token geldig tot", total: "Totaal opgewekt", none: "alles in orde",
+  },
+};
+
+function fmtPower(w) {
+  if (w == null) return "–";
+  const a = Math.abs(w);
+  return a >= 1000 ? `${(w / 1000).toFixed(a >= 10000 ? 1 : 2)} kW` : `${Math.round(w)} W`;
+}
+
+function fmtEnergy(wh, unit) {
+  if (wh == null) return "–";
+  const kwh = unit === "Wh" ? wh / 1000 : unit === "MWh" ? wh * 1000 : wh;
+  return kwh >= 1000 ? `${(kwh / 1000).toFixed(2)} MWh` : `${kwh.toFixed(kwh >= 100 ? 0 : 1)} kWh`;
+}
+
+class EnphaseSystemCard extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...config };
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._built = false;
+  }
+
+  static getStubConfig(hass) {
+    return { entity: findLayoutEntity(hass) || "" };
+  }
+
+  static getConfigForm() {
+    return {
+      schema: [
+        { name: "title", selector: { text: {} } },
+        { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
+      ],
+      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor" })[s.name],
+    };
+  }
+
+  getCardSize() {
+    return 5;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  _t(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    return (ST[lang] || ST.en)[key] || ST.en[key] || key;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const entityId = this._config.entity || findLayoutEntity(hass);
+    const layout = entityId ? hass.states[entityId] : undefined;
+    if (!layout || !layout.attributes.gateway) {
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px">${esc(T.en.no_entity)}</div></ha-card>`;
+      this._built = false;
+      return;
+    }
+    this._layout = layout;
+    if (!this._built) this._build();
+    this._update();
+  }
+
+  _build() {
+    const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
+    this.shadowRoot.innerHTML = `
+      <style>${SYSTEM_STYLE}</style>
+      <ha-card>
+        ${title}
+        <div class="flow">
+          <button class="node sun" data-k="production_power">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><g><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></g></svg>
+            <b class="v prod">–</b><span>${esc(this._t("solar"))}</span>
+          </button>
+          <div class="line l1"><i></i></div>
+          <button class="node home" data-k="consumption_power">
+            <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg>
+            <b class="v cons">–</b><span>${esc(this._t("home"))}</span>
+          </button>
+          <div class="line l2"><i></i></div>
+          <button class="node grid" data-k="net_power">
+            <svg viewBox="0 0 24 24"><path d="M8 21 12 3l4 18"/><path d="M6 8h12M5 13h14M9.5 21h5"/></svg>
+            <b class="v net">–</b><span class="gridcap">${esc(this._t("grid"))}</span>
+          </button>
+        </div>
+        <div class="section">${esc(this._t("today"))}</div>
+        <div class="tiles">
+          <button class="tile" data-k="production_today"><span>${esc(this._t("produced"))}</span><b class="pt">–</b></button>
+          <button class="tile" data-k="consumption_today"><span>${esc(this._t("used"))}</span><b class="ct">–</b></button>
+          <button class="tile" data-k="grid_import_today"><span>${esc(this._t("imported"))}</span><b class="it">–</b></button>
+          <button class="tile" data-k="grid_export_today"><span>${esc(this._t("exported"))}</span><b class="et">–</b></button>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span>${esc(this._t("selfuse"))}</span><div class="track"><i class="sc"></i></div><b class="scv">–</b></div>
+          <div class="bar-row"><span>${esc(this._t("sufficient"))}</span><div class="track"><i class="ss"></i></div><b class="ssv">–</b></div>
+        </div>
+        <div class="status">
+          <span><i class="dot pdot"></i>${esc(this._t("panels"))} <b class="pa">–</b></span>
+          <span><i class="dot adot"></i>${esc(this._t("attention"))} <b class="att">–</b></span>
+          <span><i class="dot cdot"></i>${esc(this._t("cloud"))} <b class="cl">–</b></span>
+          <span>${esc(this._t("total"))} <b class="tot">–</b></span>
+        </div>
+      </ha-card>`;
+    this.shadowRoot.querySelectorAll("[data-k]").forEach((el) =>
+      el.addEventListener("click", () => {
+        const id = this._layout.attributes.gateway[el.dataset.k];
+        if (id)
+          this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: id }, bubbles: true, composed: true }));
+      })
+    );
+    this._built = true;
+  }
+
+  _update() {
+    const hass = this._hass;
+    const g = this._layout.attributes.gateway;
+    const v = (k) => num(hass, g[k]);
+    const unit = (k) => hass.states[g[k]]?.attributes.unit_of_measurement;
+    const q = (s) => this.shadowRoot.querySelector(s);
+
+    const prod = v("production_power");
+    const cons = v("consumption_power");
+    const net = v("net_power");
+    q(".prod").textContent = fmtPower(prod);
+    q(".cons").textContent = fmtPower(cons);
+    q(".net").textContent = fmtPower(net == null ? null : Math.abs(net));
+    q(".gridcap").textContent = net == null ? this._t("grid") : net < -5 ? this._t("export") : this._t("import");
+
+    // Animated flow lines: sun -> home, and home <-> grid.
+    const l1 = q(".l1"), l2 = q(".l2");
+    l1.classList.toggle("on", (prod || 0) > 5);
+    l2.classList.toggle("on", Math.abs(net || 0) > 5);
+    l2.classList.toggle("rev", (net || 0) < -5);
+    const speed = (w) => `${Math.max(0.6, 3 - Math.log10(Math.max(10, Math.abs(w || 0))) * 0.6)}s`;
+    l1.style.setProperty("--speed", speed(prod));
+    l2.style.setProperty("--speed", speed(net));
+
+    q(".pt").textContent = fmtEnergy(v("production_today"), unit("production_today"));
+    q(".ct").textContent = fmtEnergy(v("consumption_today"), unit("consumption_today"));
+    q(".it").textContent = fmtEnergy(v("grid_import_today"), unit("grid_import_today"));
+    q(".et").textContent = fmtEnergy(v("grid_export_today"), unit("grid_export_today"));
+    q(".tot").textContent = fmtEnergy(v("production_lifetime"), unit("production_lifetime"));
+
+    const pct = (k, bar, label) => {
+      const p = v(k);
+      q(bar).style.width = `${p == null ? 0 : Math.max(0, Math.min(100, p))}%`;
+      q(label).textContent = p == null ? "–" : `${Math.round(p)}%`;
+    };
+    pct("self_consumption_today", ".sc", ".scv");
+    pct("self_sufficiency_today", ".ss", ".ssv");
+
+    // Panels producing and problems, from the layout's per-panel entities.
+    const mods = this._layout.attributes.arrays.flatMap((a) => a.modules);
+    const active = mods.filter((m) => (num(hass, m.power) || 0) > 0).length;
+    const problems = mods.filter((m) => isOn(hass, m.underperforming) || isOn(hass, m.no_output)).length;
+    q(".pa").textContent = `${active} / ${mods.length}`;
+    q(".att").textContent = problems ? String(problems) : this._t("none");
+    q(".adot").classList.toggle("bad", problems > 0);
+    q(".pdot").classList.toggle("ok", active > 0);
+    const cloud = hass.states[g.cloud_connected]?.state;
+    q(".cl").textContent = cloud === "on" ? this._t("online") : cloud === "off" ? this._t("offline") : "–";
+    q(".cdot").classList.toggle("ok", cloud === "on");
+    q(".cdot").classList.toggle("bad", cloud === "off");
+  }
+}
+
+const SYSTEM_STYLE = `
+  :host { --sun: 255,176,32; --home: 3,169,244; --grid: 156,39,176; }
+  ha-card { padding: 16px; }
+  .title { font-size: 1.15rem; font-weight: 500; margin-bottom: 12px; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  .flow { display: grid; grid-template-columns: 1fr minmax(30px, 1.2fr) 1fr minmax(30px, 1.2fr) 1fr; align-items: center; }
+  .node { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .node svg { width: 54px; height: 54px; padding: 14px; box-sizing: border-box; border-radius: 50%;
+              fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sun svg { stroke: rgb(var(--sun)); background: rgba(var(--sun), .14); }
+  .sun svg circle { fill: rgba(var(--sun), .35); }
+  .home svg { stroke: rgb(var(--home)); background: rgba(var(--home), .14); }
+  .grid svg { stroke: rgb(var(--grid)); background: rgba(var(--grid), .14); }
+  .node b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .node span { font-size: .8rem; color: var(--secondary-text-color); }
+  .line { height: 3px; border-radius: 2px; background: var(--divider-color, rgba(127,127,127,.25)); position: relative; overflow: hidden; margin-bottom: 40px; }
+  .line i { position: absolute; inset: 0; opacity: 0; }
+  .line.on i { opacity: 1; animation: flow var(--speed, 2s) linear infinite;
+    background: repeating-linear-gradient(90deg, transparent 0 10px, rgb(var(--c)) 10px 18px); background-size: 28px 100%; }
+  .l1 { --c: var(--sun); }
+  .l2 { --c: var(--grid); }
+  /* Grid -> home (import) runs right-to-left; export runs left-to-right. */
+  .l2:not(.rev) i { animation-direction: reverse; }
+  @keyframes flow { from { background-position: 0 0; } to { background-position: 28px 0; } }
+  .section { margin: 16px 0 8px; font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tile { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 10px;
+          background: var(--secondary-background-color, rgba(127,127,127,.08)); }
+  .tile span { font-size: .75rem; color: var(--secondary-text-color); }
+  .tile b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .bars { margin-top: 12px; display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 9.5em 1fr 3em; align-items: center; gap: 10px; font-size: .85rem; }
+  .bar-row span { color: var(--secondary-text-color); }
+  .bar-row b { text-align: right; font-variant-numeric: tabular-nums; }
+  .track { height: 8px; border-radius: 4px; background: var(--divider-color, rgba(127,127,127,.25)); overflow: hidden; }
+  .track i { display: block; height: 100%; width: 0; border-radius: 4px; transition: width 1.2s ease;
+             background: linear-gradient(90deg, rgb(var(--sun)), #66bb6a); }
+  .status { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: .8rem; color: var(--secondary-text-color); }
+  .status b { color: var(--primary-text-color); font-weight: 500; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--disabled-text-color, #888); }
+  .dot.ok { background: #4caf50; }
+  .dot.bad { background: var(--error-color, #db4437); }
+  @media (max-width: 500px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+`;
+
 const STYLE = `
   :host { --panel: #0d0f12; --cell: rgba(255,255,255,.06); --sun: 255,176,32; }
   ha-card { padding: 16px; overflow: hidden; }
@@ -668,33 +947,43 @@ try {
   /* already registered */
 }
 
-// Loaded early as an extra module: the frontend may swap in its own element
-// registry afterwards, so (re)define until the card is known where it counts.
-function defineCard() {
-  if (customElements.get(TAG)) return true;
-  try {
-    customElements.define(TAG, class extends EnphasePanelLayoutCard {});
-  } catch (err) {
-    return false;
+// The frontend may swap in its own element registry after loading extra
+// modules, so (re)define until the cards are known where it counts.
+const CARDS = [
+  [TAG, EnphasePanelLayoutCard, "Enphase panel layout",
+   "Every solar panel on its place on the roof: live power, today, health and a replay of the day."],
+  ["enphase-system-card", EnphaseSystemCard, "Enphase system summary",
+   "Solar, home and grid at a glance, today's energy, self-consumption and status."],
+];
+
+function defineCards() {
+  for (const [tag, cls] of CARDS) {
+    if (customElements.get(tag)) continue;
+    try {
+      customElements.define(tag, class extends cls {});
+    } catch (err) {
+      /* defined meanwhile */
+    }
   }
-  return true;
 }
 
-defineCard();
+defineCards();
 let tries = 0;
 const keepDefined = setInterval(() => {
-  defineCard();
+  defineCards();
   if (++tries > 120) clearInterval(keepDefined);
 }, 500);
 
 window.customCards = window.customCards || [];
-if (!window.customCards.some((c) => c.type === TAG)) {
-  window.customCards.push({
-    type: TAG,
-    name: "Enphase panel layout",
-    description: "Every solar panel on its place on the roof: live power, today, health and a replay of the day.",
-    preview: true,
-    documentationURL: "https://github.com/George-120/ha-enphase-envoy-local",
-  });
-  console.info(`%c ENPHASE-PANEL-LAYOUT-CARD %c ${CARD_VERSION} `, "background:#ffb020;color:#000", "background:#222;color:#fff");
+for (const [tag, , name, description] of CARDS) {
+  if (!window.customCards.some((c) => c.type === tag)) {
+    window.customCards.push({
+      type: tag,
+      name,
+      description,
+      preview: true,
+      documentationURL: "https://github.com/George-120/ha-enphase-envoy-local",
+    });
+  }
 }
+console.info(`%c ENPHASE CARDS %c ${CARD_VERSION} `, "background:#ffb020;color:#000", "background:#222;color:#fff");

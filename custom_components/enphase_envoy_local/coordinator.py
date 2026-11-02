@@ -295,8 +295,25 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     CONF_UNDERPERFORM_THRESHOLD, DEFAULT_UNDERPERFORM_THRESHOLD
                 ),
             )
+        self._remember_efficiency(data)
         self._update_issues(data)
         return data
+
+    def _remember_efficiency(self, data: EnvoyData) -> None:
+        """Keep each panel's daylight efficiency for the hours without sun."""
+        saved: dict[str, float] = self._daily.setdefault("efficiency", {})
+        changed = False
+        for serial, inv in data.inverters.items():
+            live = inv.efficiency
+            if live is not None:
+                if saved.get(serial) != live:
+                    saved[serial] = live
+                    changed = True
+                inv.last_efficiency = live
+            else:
+                inv.last_efficiency = saved.get(serial)
+        if changed:
+            self._store.async_delay_save(lambda: self._daily, 30)
 
     def _update_issues(self, data: EnvoyData) -> None:
         """Raise or clear repair issues (Settings > Repairs) for lasting problems."""
@@ -443,7 +460,11 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         """
         today = dt_util.now().date().isoformat()
         if self._daily.get("date") != today:
-            self._daily = {"date": today, "base": {}}
+            self._daily = {
+                "date": today,
+                "base": {},
+                "efficiency": self._daily.get("efficiency", {}),
+            }
         base: dict[str, float] = self._daily.setdefault("base", {})
         changed = False
         for name, lifetime_attr, today_attr in DAILY_COUNTERS:
