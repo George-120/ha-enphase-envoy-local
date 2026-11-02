@@ -40,7 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 STORAGE_VERSION = 1
 PAST_DAYS = 14
-FORECAST_DAYS = 3
+FORECAST_DAYS = 4  # today in UTC can still be yesterday locally
 MIN_DAY_IRRADIANCE = 250  # Wh/m² - darker days say little about the system
 DEFAULT_TILT = 35.0
 DEFAULT_AZIMUTH = 180.0  # compass degrees, 180 = south
