@@ -17,11 +17,11 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.8.1";
+const CARD_VERSION = "1.9.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
-const MODES = ["power", "today", "health", "temperature", "efficiency"];
+const MODES = ["power", "today", "health", "shade", "temperature", "efficiency"];
 
 // Height limit of the roof drawing and the place it takes in a sections view.
 const SIZES = {
@@ -62,6 +62,13 @@ const T = {
     prev_day: "Previous day",
     next_day: "Next day",
     pick_day: "Pick a day",
+    shade: "Shade",
+    whole_day: "Whole day",
+    shade_loading: "Analysing the last weeks…",
+    shade_none: "Not enough history yet to find shade (needs a few days of sunshine).",
+    shade_info: "Share of what the good panels on the same roof surface made, over the last {days} days. Lower = more shade or a weaker panel.",
+    shade_worst: "most shade",
+    expected: "Expected",
     no_eff_live: "No efficiency measured yet. It is measured while the panels produce (from 10 W DC); after sunset the last value of the day stays visible.",
     no_eff_yet: "No efficiency recorded yet at this moment of the day.",
     no_eff_day: "No efficiency was recorded on this day. It is stored from the moment the integration was set up, so earlier days only show power, energy and health.",
@@ -104,6 +111,13 @@ const T = {
     prev_day: "Vorige dag",
     next_day: "Volgende dag",
     pick_day: "Kies een dag",
+    shade: "Schaduw",
+    whole_day: "Hele dag",
+    shade_loading: "De afgelopen weken worden geanalyseerd…",
+    shade_none: "Nog niet genoeg geschiedenis om schaduw te vinden (een paar dagen zon nodig).",
+    shade_info: "Deel van wat de goede panelen op hetzelfde dakvlak opleverden, over de afgelopen {days} dagen. Lager = meer schaduw of een zwakker paneel.",
+    shade_worst: "meeste schaduw",
+    expected: "Verwacht",
     no_eff_live: "Nog geen rendement gemeten. Dat wordt gemeten zolang de panelen produceren (vanaf 10 W DC); na zonsondergang blijft de laatste waarde van de dag staan.",
     no_eff_yet: "Op dit moment van de dag is nog geen rendement vastgelegd.",
     no_eff_day: "Op deze dag is geen rendement vastgelegd. Dat wordt bewaard vanaf het moment dat de integratie is ingesteld; eerdere dagen tonen alleen vermogen, opbrengst en gezondheid.",
@@ -384,12 +398,17 @@ class EnphasePanelLayoutCard extends HTMLElement {
               : ""
           }</div>`
         : "";
-    const modeLabel = { power: "power", today: "today_mode", health: "health", temperature: "temperature", efficiency: "efficiency" };
+    const modeLabel = { power: "power", today: "today_mode", health: "health", shade: "shade", temperature: "temperature", efficiency: "efficiency" };
     const toolbar = this._config.show_toolbar
       ? `<div class="toolbar">
           <div class="modes" role="tablist">${MODES.map(
             (m) => `<button class="chip" role="tab" data-mode="${m}">${esc(this._t(modeLabel[m]))}</button>`
           ).join("")}</div>
+        </div>
+        <div class="shade-bar" hidden>
+          <span class="shade-label">${esc(this._t("whole_day"))}</span>
+          <input type="range" class="shade-hour" min="0" max="0" value="0" step="1" aria-label="hour">
+          <span class="shade-days"></span>
         </div>
         <div class="replay" hidden>
           <div class="player-top">
@@ -414,6 +433,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
                 <path class="area-all" d=""/>
                 <path class="area-done" d="" clip-path="url(#played)"/>
                 <path class="line-done" d="" clip-path="url(#played)"/>
+                <path class="line-exp" d=""/>
                 <line class="cursor" x1="0" x2="0" y1="0" y2="100"/>
               </svg>
               <input type="range" min="0" max="0" value="0" step="1" aria-label="time">
@@ -469,11 +489,21 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".modes .chip").forEach((b) =>
       b.addEventListener("click", () => {
         this._mode = b.dataset.mode;
+        q(".shade-bar").hidden = this._mode !== "shade";
+        if (this._mode === "shade" && !this._shade) this._loadShade();
         if (this._replay) this._showFrame(this._replay.index);
         else this._update();
       })
     );
     q(".replay-btn")?.addEventListener("click", () => this._startReplay());
+    if (q(".shade-bar")) q(".shade-bar").hidden = this._mode !== "shade";
+    if (this._mode === "shade" && !this._shade) this._loadShade();
+    q(".shade-hour")?.addEventListener("input", (e) => {
+      this._shadeHour = +e.target.value;
+      this._updateShadeLabel();
+      if (this._replay) this._showFrame(this._replay.index);
+      else this._update();
+    });
     const shiftDay = (n) => {
       const d = new Date(this._replayDay || Date.now());
       d.setDate(d.getDate() + n);
@@ -710,6 +740,15 @@ class EnphasePanelLayoutCard extends HTMLElement {
             hue: p == null ? "" : p >= 95 ? "ok" : p >= 88 ? "warn" : "bad",
           };
         }
+        case "shade": {
+          const p = this._shadeValue(r.m.serial);
+          return {
+            level: p == null ? 0 : 0.25 + 0.75 * clamp((100 - p) / 30),
+            value: p == null ? "–" : Math.round(p),
+            unit: "%",
+            hue: "shade",
+          };
+        }
         case "temperature":
           return { level: r.t == null ? 0 : clamp(r.t / 70), value: r.t == null ? "–" : Math.round(r.t), unit: "°C" };
         case "efficiency":
@@ -734,7 +773,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
         ? ""
         : `${Math.round(r.t)}°C`;
       el.style.setProperty("--level", v.level.toFixed(3));
-      el.dataset.tone = mode === "health" ? v.hue : mode;
+      el.dataset.tone = mode === "health" || mode === "shade" ? v.hue : mode;
       el.classList.toggle("off", !r.w && mode === "power");
       el.classList.toggle("problem", !replaying && r.problem);
       el.title = [
@@ -748,6 +787,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
         r.wh != null ? `${(r.wh / 1000).toFixed(2)} kWh ${this._t("today")}` : null,
         r.perf != null ? `${Math.round(r.perf)} % ${this._t("vs_roof")}` : null,
         r.perfWeek != null ? `${Math.round(r.perfWeek)} % ${this._t("vs_roof")} (${this._t("week")})` : null,
+        this._shadeWorst(r.m.serial),
         r.noOutput ? `⚠ ${this._t("no_output")}` : r.problem ? `⚠ ${this._t("problem")}` : null,
       ]
         .filter(Boolean)
@@ -767,17 +807,20 @@ class EnphasePanelLayoutCard extends HTMLElement {
       health: [this._t("health"), "70 %", "100 %"],
       temperature: [this._t("temperature"), "0 °C", "70 °C"],
       efficiency: [this._t("efficiency"), "85 %", "100 %"],
+      shade: [this._t("shade"), "100 %", "70 %"],
     }[mode];
     // Say so when a view has nothing to show, instead of a roof full of dashes.
     const needs = { efficiency: "eff", temperature: "t", today: "wh", health: "perf" }[mode];
-    const empty = needs && rows.every((r) => r[needs] == null && (needs !== "perf" || r.perfWeek == null));
+    let empty = needs && rows.every((r) => r[needs] == null && (needs !== "perf" || r.perfWeek == null));
+    if (mode === "shade") empty = !this._shade?.ready;
     const note = q(".mode-note");
     if (note) {
       note.hidden = !empty;
       if (empty) {
         const pastDay = replaying && this._replayDay && this._replayDay < new Date().setHours(0, 0, 0, 0);
-        note.textContent =
-          mode === "efficiency"
+        note.textContent = mode === "shade"
+          ? this._t(this._shade?.loading ? "shade_loading" : "shade_none")
+          : mode === "efficiency"
             ? this._t(pastDay ? "no_eff_day" : replaying ? "no_eff_yet" : "no_eff_live")
             : this._t(pastDay ? "no_data_day" : "no_data_yet");
       }
@@ -937,17 +980,21 @@ class EnphasePanelLayoutCard extends HTMLElement {
     const totals = frames.map((t) =>
       this._modules.reduce((sum, m, i) => sum + (this._valueAtSeries(series[`#${i}`], t) || 0), 0)
     );
+    const hourly = this._forecastHourly();
+    const expected = hourly ? frames.map((t) => this._expectedAt(hourly, t)) : null;
     this._replay = { series, frames, energy, totals, index: 0 };
-    this._drawCurve(totals, frames);
+    this._drawCurve(totals, frames, expected && expected.some((v) => v) ? expected : null);
     q(".replay input[type=range]").max = frames.length - 1;
     this._showFrame(0);
     this._play();
   }
 
-  _drawCurve(totals, frames) {
+  _drawCurve(totals, frames, expected) {
     const q = (s) => this.shadowRoot.querySelector(s);
     const all = q(".area-all"), done = q(".area-done"), line = q(".line-done"), ticks = q(".ticks");
+    const exp = q(".line-exp");
     if (!all) return;
+    if (exp) exp.setAttribute("d", "");
     if (!totals || totals.length < 2) {
       all.setAttribute("d", "");
       done.setAttribute("d", "");
@@ -955,8 +1002,16 @@ class EnphasePanelLayoutCard extends HTMLElement {
       if (ticks) ticks.innerHTML = "";
       return;
     }
-    const peak = Math.max(1, ...totals);
+    const peak = Math.max(1, ...totals, ...(expected || []).map((v) => v || 0));
     const n = totals.length - 1;
+    if (exp && expected) {
+      exp.setAttribute(
+        "d",
+        expected
+          .map((v, i) => (v == null ? null : `${(i / n) * 1000},${(96 - (v / peak) * 86).toFixed(1)}`))
+          .reduce((d, p, i, arr) => (p == null ? d : `${d}${d && arr[i - 1] != null ? "L" : "M"}${p}`), "")
+      );
+    }
     const pts = totals.map((v, i) => [(i / n) * 1000, 96 - (v / peak) * 86]);
     const stroke = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
     const area = `${stroke}L1000,100L0,100Z`;
@@ -976,6 +1031,152 @@ class EnphasePanelLayoutCard extends HTMLElement {
       }
       ticks.innerHTML = marks.join("");
     }
+  }
+
+  /* -------------------------------------------------------------- shade */
+
+  async _loadShade() {
+    const DAYS = 14;
+    this._shade = { loading: true, ready: false };
+    this._update();
+    const hass = this._hass;
+    const candidates = this._modules.map((m) => {
+      const ids = m.power ? [m.power] : [];
+      if (m.serial) {
+        for (const [id, st] of Object.entries(hass.states)) {
+          if (id !== m.power && id.startsWith("sensor.") && id.includes(m.serial) && st.attributes.unit_of_measurement === "W")
+            ids.push(id);
+        }
+      }
+      return ids;
+    });
+    const end = new Date();
+    end.setMinutes(0, 0, 0);
+    const start = new Date(end.getTime() - DAYS * 86400000);
+    let stats = {};
+    try {
+      stats = await hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: [...new Set(candidates.flat())],
+        period: "hour",
+        types: ["mean"],
+      });
+    } catch (err) {
+      this._shade = { loading: false, ready: false };
+      this._update();
+      return;
+    }
+    const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
+    // Per panel: hour start -> mean W, from the candidate with most data.
+    const series = this._modules.map((m, i) => {
+      let best = new Map();
+      for (const id of candidates[i]) {
+        const rows = stats[id] || [];
+        if (rows.length > best.size) best = new Map(rows.filter((r) => r.mean != null).map((r) => [toMs(r.start), r.mean]));
+      }
+      return best;
+    });
+    const groups = {};
+    this._modules.forEach((m, i) => (groups[m.label || ""] ||= []).push(i));
+    const hours = new Set();
+    const acc = this._modules.map(() => ({}));
+    let daysSeen = new Set();
+    const times = new Set(series.flatMap((s) => [...s.keys()]));
+    for (const t of times) {
+      for (const idx of Object.values(groups)) {
+        const vals = idx.map((i) => series[i].get(t)).filter((v) => v != null).sort((a, b) => a - b);
+        if (vals.length < 3) continue;
+        const med = (a) => (a.length % 2 ? a[a.length >> 1] : (a[(a.length >> 1) - 1] + a[a.length >> 1]) / 2);
+        const ref = med(vals.filter((v) => v >= med(vals)));
+        if (ref < 15) continue;
+        const h = new Date(t).getHours();
+        hours.add(h);
+        daysSeen.add(new Date(t).toDateString());
+        for (const i of idx) {
+          const v = series[i].get(t);
+          if (v == null) continue;
+          const a = (acc[i][h] ||= [0, 0]);
+          a[0] += Math.min(v, ref);
+          a[1] += ref;
+        }
+      }
+    }
+    const hourList = [...hours].sort((a, b) => a - b);
+    const ratio = new Map();
+    this._modules.forEach((m, i) => {
+      const per = {};
+      let sv = 0, sr = 0;
+      for (const h of hourList) {
+        const a = acc[i][h];
+        if (!a || !a[1]) continue;
+        per[h] = (a[0] / a[1]) * 100;
+        sv += a[0];
+        sr += a[1];
+      }
+      per.all = sr ? (sv / sr) * 100 : null;
+      ratio.set(m.serial, per);
+    });
+    this._shade = { loading: false, ready: hourList.length > 0, hours: hourList, ratio, days: daysSeen.size };
+    const slider = this.shadowRoot.querySelector(".shade-hour");
+    if (slider) {
+      slider.max = hourList.length;
+      slider.value = this._shadeHour = 0;
+    }
+    this._updateShadeLabel();
+    if (this._replay) this._showFrame(this._replay.index);
+    else this._update();
+  }
+
+  _shadeValue(serial) {
+    const sh = this._shade;
+    if (!sh?.ready) return null;
+    const per = sh.ratio.get(serial);
+    if (!per) return null;
+    const key = this._shadeHour ? sh.hours[this._shadeHour - 1] : "all";
+    return per[key] ?? null;
+  }
+
+  _shadeWorst(serial) {
+    const per = this._shade?.ready ? this._shade.ratio.get(serial) : null;
+    if (!per) return null;
+    let worst = null;
+    for (const h of this._shade.hours) if (per[h] != null && (worst == null || per[h] < per[worst])) worst = h;
+    if (worst == null || per[worst] > 92) return null;
+    return `${this._t("shade")}: ${this._t("shade_worst")} ${String(worst - 1).padStart(2, "0")}–${String(worst).padStart(2, "0")} (${Math.round(per[worst])} %)`;
+  }
+
+  _updateShadeLabel() {
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const sh = this._shade;
+    const label = q(".shade-label"), days = q(".shade-days");
+    if (!label) return;
+    if (!sh?.ready || !this._shadeHour) label.textContent = this._t("whole_day");
+    else {
+      const h = sh.hours[this._shadeHour - 1];
+      label.textContent = `${String(h - 1).padStart(2, "0")}:00 – ${String(h).padStart(2, "0")}:00`;
+    }
+    if (days) days.textContent = sh?.ready ? this._t("shade_info").replace("{days}", sh.days) : "";
+  }
+
+  /* ---------------------------------------------------------- forecast */
+
+  _forecastHourly() {
+    const id = this._layoutState?.attributes.gateway?.forecast_today;
+    const rows = id ? this._hass.states[id]?.attributes.hourly : null;
+    return Array.isArray(rows) ? rows.map(([t, wh]) => [Date.parse(t), wh]) : null;
+  }
+
+  _expectedAt(hourly, t) {
+    // Hour values are means over the hour before; interpolate between hour middles.
+    if (!hourly) return null;
+    const mids = hourly.map(([end, wh]) => [end - 1800000, wh]);
+    if (t < mids[0][0] || t > mids[mids.length - 1][0]) return null;
+    let lo = 0;
+    while (lo < mids.length - 2 && mids[lo + 1][0] <= t) lo++;
+    const [t0, v0] = mids[lo], [t1, v1] = mids[lo + 1] || mids[lo];
+    return t1 === t0 ? v0 : v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
   }
 
   _emptyRow(m) {
@@ -1401,6 +1602,14 @@ const STYLE = `
   .area-all { fill: rgba(127,127,127,.18); }
   .area-done { fill: url(#sunfill); }
   .line-done { fill:none; stroke: rgb(var(--sun)); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .line-exp { fill:none; stroke: rgba(255,255,255,.7); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+  .shade-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding: 8px 12px; border-radius: 16px; }
+  .shade-bar[hidden] { display:none; }
+  .shade-label { font-weight:600; font-size:.85rem; min-width: 7.5em; font-variant-numeric: tabular-nums; }
+  .shade-bar input { flex: 1 1 140px; accent-color: rgb(140,150,255); }
+  .shade-days { flex-basis:100%; font-size:.75rem; color: var(--secondary-text-color); }
+  .panel[data-tone="shade"] .glow { --c: 124,135,255; }
+  .bar.shade { background: linear-gradient(90deg, #0d0f12, rgb(124,135,255)); }
   .cursor { stroke: rgb(var(--sun)); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; opacity:.9; }
   .ticks { position:absolute; left:0; right:0; bottom:0; height:12px; font-size:.65rem; color: var(--secondary-text-color); }
   .ticks span { position:absolute; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
@@ -1489,6 +1698,391 @@ const STYLE = `
 `;
 
 
+/* ===================================================================
+ * Forecast card: expected vs. actual production, yesterday to day after
+ * tomorrow, from the integration's calibrated Open-Meteo forecast.
+ *
+ *   type: custom:enphase-forecast-card
+ *   title: Opbrengstverwachting
+ * =================================================================== */
+
+const FT = {
+  en: {
+    title: "Solar forecast", yesterday: "Yesterday", today: "Today", tomorrow: "Tomorrow", day_after: "Day after",
+    expected: "Expected", actual: "Produced", of_expected: "of expected", so_far: "expected so far",
+    no_forecast: "No forecast yet. Turn on 'Solar forecast' in the options of Enphase Envoy Local (on by default) and wait a minute.",
+    calibrated: "Calibrated on {n} sunny days of your own system", not_calibrated: "Not calibrated yet: becomes accurate after the first sunny day",
+    peak: "Peak", now: "now", source: "Weather: Open-Meteo",
+  },
+  nl: {
+    title: "Opbrengstverwachting", yesterday: "Gisteren", today: "Vandaag", tomorrow: "Morgen", day_after: "Overmorgen",
+    expected: "Verwacht", actual: "Opgewekt", of_expected: "van verwacht", so_far: "verwacht tot nu",
+    no_forecast: "Nog geen verwachting. Zet 'Opbrengstverwachting' aan in de opties van Enphase Envoy Local (staat standaard aan) en wacht een minuut.",
+    calibrated: "Gekalibreerd op {n} zonnige dagen van je eigen installatie", not_calibrated: "Nog niet gekalibreerd: wordt nauwkeurig na de eerste zonnige dag",
+    peak: "Piek", now: "nu", source: "Weer: Open-Meteo",
+  },
+};
+
+class EnphaseForecastCard extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...config };
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._day = 0; // -1 yesterday, 0 today, 1 tomorrow, 2 day after
+    this._built = false;
+    this._actual = {};
+  }
+
+  static getStubConfig() {
+    return { title: "" };
+  }
+
+  static getConfigForm() {
+    return {
+      schema: [{ name: "title", selector: { text: {} } }],
+      computeLabel: (s) => ({ title: "Title / Titel" })[s.name],
+    };
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  _t(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    return (FT[lang] || FT.en)[key] || FT.en[key] || key;
+  }
+
+  _locale() {
+    return this._hass?.locale?.language || this._hass?.language || undefined;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const fcId =
+      this._config.entity ||
+      Object.keys(hass.states).find(
+        (id) => id.startsWith("sensor.") && Array.isArray(hass.states[id].attributes?.hourly) && hass.states[id].attributes.calibration !== undefined
+      );
+    const fc = fcId ? hass.states[fcId] : undefined;
+    this._fc = fc;
+    if (!this._built) this._build();
+    const key = fc ? `${fc.attributes.updated}` : "none";
+    if (key !== this._fcKey) {
+      this._fcKey = key;
+      this._loadActual();
+    }
+    const now = Date.now();
+    if (!this._lastPaint || now - this._lastPaint > 30000) this._paint();
+  }
+
+  _build() {
+    const days = [-1, 0, 1, 2];
+    const names = { "-1": "yesterday", 0: "today", 1: "tomorrow", 2: "day_after" };
+    this.shadowRoot.innerHTML = `
+      <style>${FORECAST_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top">
+          <div class="title">${esc(this._config.title || this._t("title"))}</div>
+          <div class="source">${esc(this._t("source"))}</div>
+        </div>
+        <div class="days">${days
+          .map(
+            (d) => `<button class="day" data-d="${d}">
+              <span class="dn">${esc(this._t(names[d]))}</span>
+              <span class="dd"></span>
+              <b class="dv">–</b>
+              <span class="dbar"><i></i></span>
+            </button>`
+          )
+          .join("")}</div>
+        <div class="figures">
+          <div><span class="big exp">–</span><span class="unit">kWh</span><span class="cap">${esc(this._t("expected"))}</span></div>
+          <div class="act-fig"><span class="big actv">–</span><span class="unit">kWh</span><span class="cap">${esc(this._t("actual"))}</span></div>
+          <div class="pct-fig"><span class="pct">–</span><span class="cap pcap"></span></div>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 1000 220" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="fexp" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="rgb(255,255,255)" stop-opacity=".22"/>
+                <stop offset="1" stop-color="rgb(255,255,255)" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="fact" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="rgb(255,176,32)" stop-opacity=".6"/>
+                <stop offset="1" stop-color="rgb(255,176,32)" stop-opacity=".04"/>
+              </linearGradient>
+            </defs>
+            <g class="grid"></g>
+            <path class="exp-area" d=""/>
+            <path class="exp-line" d=""/>
+            <path class="act-area" d=""/>
+            <path class="act-line" d=""/>
+            <line class="now" x1="-10" x2="-10" y1="0" y2="200"/>
+            <line class="hover" x1="-10" x2="-10" y1="0" y2="200"/>
+          </svg>
+          <div class="xlabels"></div>
+          <div class="tip" hidden></div>
+        </div>
+        <div class="legend">
+          <span><i class="lg-exp"></i>${esc(this._t("expected"))}</span>
+          <span><i class="lg-act"></i>${esc(this._t("actual"))}</span>
+          <span class="calib"></span>
+        </div>
+        <div class="msg" hidden>${esc(this._t("no_forecast"))}</div>
+      </ha-card>`;
+    this.shadowRoot.querySelectorAll(".day").forEach((b) =>
+      b.addEventListener("click", () => {
+        this._day = +b.dataset.d;
+        this._paint();
+      })
+    );
+    const chart = this.shadowRoot.querySelector(".chart");
+    chart.addEventListener("pointermove", (e) => this._hover(e));
+    chart.addEventListener("pointerleave", () => this._hover(null));
+    this._built = true;
+  }
+
+  _dayStart(offset) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offset);
+    return d.getTime();
+  }
+
+  _hourly() {
+    const rows = this._fc?.attributes.hourly || [];
+    return rows.map(([t, wh]) => [Date.parse(t), wh]);
+  }
+
+  async _loadActual() {
+    // Actual production per hour from the statistics of the production sensors.
+    const hass = this._hass;
+    const layout = Object.values(hass.states).find((st) => st.attributes.gateway && Array.isArray(st.attributes.arrays));
+    const own = layout?.attributes.gateway?.production_power;
+    const serial = layout?.attributes.serial;
+    const ids = [own].filter(Boolean);
+    for (const [id, st] of Object.entries(hass.states)) {
+      if (id === own || !id.startsWith("sensor.") || !serial || !id.includes(serial)) continue;
+      if (st.attributes.unit_of_measurement === "W" && /product|opgewekt|productie/i.test(id + (st.attributes.friendly_name || "")))
+        ids.push(id);
+    }
+    if (!ids.length) return;
+    const start = new Date(this._dayStart(-1));
+    try {
+      const stats = await hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: start.toISOString(),
+        end_time: new Date().toISOString(),
+        statistic_ids: ids,
+        period: "hour",
+        types: ["mean"],
+      });
+      const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
+      // Per hour the highest of the candidates (our sensor may be younger).
+      const merged = {};
+      for (const id of ids)
+        for (const r of stats[id] || []) {
+          if (r.mean == null) continue;
+          const t = toMs(r.start) + 3600000; // keyed by hour end, like the forecast
+          merged[t] = Math.max(merged[t] || 0, r.mean);
+        }
+      this._actual = merged;
+      this._actualIds = ids;
+    } catch (err) {
+      this._actual = {};
+    }
+    this._paint();
+  }
+
+  _paint() {
+    if (!this._built) return;
+    this._lastPaint = Date.now();
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const hourly = this._hourly();
+    q(".msg").hidden = hourly.length > 0;
+    q(".chart").style.display = hourly.length ? "" : "none";
+    if (!hourly.length) return;
+    const now = Date.now();
+    // Running hour: add the live production so far.
+    const live = this._actualIds?.map((id) => parseFloat(this._hass.states[id]?.state)).find((v) => Number.isFinite(v));
+    const actual = { ...this._actual };
+    const curEnd = Math.ceil(now / 3600000) * 3600000;
+    if (live != null && actual[curEnd] == null) actual[curEnd] = live;
+
+    const sum = (from, to, src) => {
+      let wh = 0;
+      for (const [t, v] of src) if (t > from && t <= to) wh += v;
+      return wh / 1000;
+    };
+    const actualRows = Object.entries(actual).map(([t, v]) => [+t, v]);
+    this.shadowRoot.querySelectorAll(".day").forEach((b) => {
+      const d = +b.dataset.d;
+      const from = this._dayStart(d), to = from + 86400000;
+      const exp = sum(from, to, hourly);
+      const act = d <= 0 ? sum(from, to, actualRows) : null;
+      b.querySelector(".dd").textContent = new Date(from).toLocaleDateString(this._locale(), { weekday: "short", day: "numeric" });
+      b.querySelector(".dv").textContent = `${(d < 0 && act ? act : exp).toFixed(1)} kWh`;
+      b.classList.toggle("on", d === this._day);
+      b._exp = exp;
+    });
+    const maxDay = Math.max(0.1, ...[...this.shadowRoot.querySelectorAll(".day")].map((b) => b._exp || 0));
+    this.shadowRoot.querySelectorAll(".day").forEach((b) => (b.querySelector(".dbar i").style.width = `${((b._exp || 0) / maxDay) * 100}%`));
+
+    const from = this._dayStart(this._day), to = from + 86400000;
+    const expDay = hourly.filter(([t]) => t > from && t <= to);
+    const actDay = actualRows.filter(([t]) => t > from && t <= Math.min(to, curEnd)).sort((a, b) => a[0] - b[0]);
+    const expKwh = sum(from, to, hourly);
+    const actKwh = sum(from, to, actualRows);
+    q(".exp").textContent = expKwh.toFixed(1);
+    const past = this._day <= 0;
+    q(".act-fig").style.display = past ? "" : "none";
+    q(".actv").textContent = actKwh.toFixed(1);
+    let pctText = "", capText = "";
+    if (this._day === 0) {
+      const soFar = sum(from, now, hourly) + ((expDay.find(([t]) => t > now && t - 3600000 < now) || [0, 0])[1] * ((now % 3600000) / 3600000)) / 1000;
+      if (soFar > 0.05) {
+        pctText = `${Math.round((actKwh / soFar) * 100)} %`;
+        capText = `${this._t("of_expected")} (${soFar.toFixed(1)} kWh ${this._t("so_far")})`;
+      }
+    } else if (this._day < 0 && expKwh > 0.05) {
+      pctText = `${Math.round((actKwh / expKwh) * 100)} %`;
+      capText = this._t("of_expected");
+    }
+    q(".pct").textContent = pctText;
+    q(".pcap").textContent = capText;
+    q(".pct-fig").style.display = pctText ? "" : "none";
+
+    // Chart window: from an hour before the first sun to an hour after the last.
+    const sunny = expDay.filter(([, v]) => v > 1).map(([t]) => t).concat(actDay.filter(([, v]) => v > 1).map(([t]) => t));
+    const x0 = sunny.length ? Math.min(...sunny) - 2 * 3600000 : from + 6 * 3600000;
+    const x1 = sunny.length ? Math.max(...sunny) + 3600000 : from + 20 * 3600000;
+    const peak = Math.max(50, ...expDay.map(([, v]) => v), ...actDay.map(([, v]) => v)) * 1.12;
+    const X = (t) => ((t - x0) / (x1 - x0)) * 1000;
+    const Y = (v) => 200 - (v / peak) * 190;
+    const mid = (t) => t - 1800000;
+    const path = (rows) =>
+      rows.map(([t, v], i) => `${i ? "L" : "M"}${X(mid(t)).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+    const area = (rows) =>
+      rows.length ? `${path(rows)}L${X(mid(rows[rows.length - 1][0])).toFixed(1)},200L${X(mid(rows[0][0])).toFixed(1)},200Z` : "";
+    const smoothRows = (rows) => rows.filter(([t]) => mid(t) >= x0 - 3600000 && mid(t) <= x1 + 3600000);
+    const e = smoothRows(expDay), a = smoothRows(actDay);
+    q(".exp-line").setAttribute("d", path(e));
+    q(".exp-area").setAttribute("d", area(e));
+    q(".act-line").setAttribute("d", past ? path(a) : "");
+    q(".act-area").setAttribute("d", past ? area(a) : "");
+    const nowLine = q(".now");
+    const nx = this._day === 0 ? X(now) : -10;
+    nowLine.setAttribute("x1", nx);
+    nowLine.setAttribute("x2", nx);
+    nowLine.style.display = this._day === 0 && nx >= 0 && nx <= 1000 ? "" : "none";
+    // Grid and hour labels.
+    const grid = [];
+    const labels = [];
+    const d = new Date(x0);
+    d.setMinutes(0, 0, 0);
+    for (d.setHours(d.getHours() + 1); d.getTime() < x1; d.setHours(d.getHours() + 1)) {
+      const x = X(d.getTime());
+      if (d.getHours() % 2 === 0) {
+        grid.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="0" y2="200"/>`);
+        labels.push(`<span style="left:${(x / 10).toFixed(1)}%">${String(d.getHours()).padStart(2, "0")}:00</span>`);
+      }
+    }
+    for (let i = 1; i <= 3; i++) grid.push(`<line class="h" x1="0" x2="1000" y1="${(200 - i * 50).toFixed(0)}" y2="${(200 - i * 50).toFixed(0)}"/>`);
+    q(".grid").innerHTML = grid.join("");
+    q(".xlabels").innerHTML = labels.join("");
+    this._view = { x0, x1, expDay, actDay, past };
+
+    const cal = this._fc?.attributes.calibration || {};
+    const n = Math.min(...Object.values(cal).map((c) => c.calibration_days ?? 0));
+    q(".calib").textContent = Number.isFinite(n) && n > 0 ? this._t("calibrated").replace("{n}", n) : this._t("not_calibrated");
+  }
+
+  _hover(e) {
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const tip = q(".tip"), line = q(".hover");
+    if (!e || !this._view) {
+      tip.hidden = true;
+      line.style.display = "none";
+      return;
+    }
+    line.style.display = "";
+    const box = q(".chart svg").getBoundingClientRect();
+    const f = (e.clientX - box.left) / box.width;
+    const { x0, x1, expDay, actDay, past } = this._view;
+    const t = x0 + f * (x1 - x0);
+    const end = Math.ceil(t / 3600000) * 3600000;
+    const exp = expDay.find(([h]) => h === end)?.[1];
+    const act = actDay.find(([h]) => h === end)?.[1];
+    if (exp == null && act == null) return this._hover(null);
+    const x = f * 1000;
+    line.setAttribute("x1", x);
+    line.setAttribute("x2", x);
+    const fmt = (d) => d.toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" });
+    tip.innerHTML = `<b>${fmt(new Date(end - 3600000))}–${fmt(new Date(end))}</b>
+      <span><i class="lg-exp"></i>${esc(this._t("expected"))} ${exp == null ? "–" : Math.round(exp) + " Wh"}</span>
+      ${past ? `<span><i class="lg-act"></i>${esc(this._t("actual"))} ${act == null ? "–" : Math.round(act) + " Wh"}</span>` : ""}`;
+    tip.hidden = false;
+    tip.style.left = `${Math.min(Math.max(f * 100, 12), 88)}%`;
+  }
+}
+
+const FORECAST_STYLE = `
+  :host { --sun: 255,176,32; }
+  ha-card { padding: 16px; overflow: hidden; }
+  .top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom: 12px; }
+  .title { font-size: 1.15rem; font-weight: 500; }
+  .source { font-size: .72rem; color: var(--secondary-text-color); }
+  .days { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .day { font: inherit; color: var(--primary-text-color); cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:2px;
+         padding: 10px 12px; border-radius: 16px; background: var(--g-fill-soft); border: 1px solid var(--g-edge);
+         box-shadow: var(--g-shine); transition: transform .15s ease, border-color .2s; }
+  .day:hover { transform: translateY(-1px); }
+  .day.on { border-color: rgba(var(--sun), .6); background: linear-gradient(160deg, rgba(var(--sun), .28), rgba(var(--sun), .06)); }
+  .dn { font-size: .78rem; font-weight: 600; }
+  .dd { font-size: .7rem; color: var(--secondary-text-color); }
+  .dv { font-size: 1.05rem; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .dbar { height: 4px; border-radius: 2px; background: rgba(127,127,127,.2); overflow:hidden; margin-top: 6px; }
+  .dbar i { display:block; height:100%; width:0; border-radius:2px; background: rgb(var(--sun)); transition: width .8s ease; }
+  .figures { display:flex; gap: 22px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
+  .figures > div { display:flex; align-items:baseline; gap:4px; }
+  .big { font-size: 1.7rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .actv { color: rgb(var(--sun)); }
+  .unit { color: var(--secondary-text-color); font-size: .9rem; }
+  .cap { color: var(--secondary-text-color); font-size: .8rem; margin-left: 4px; }
+  .pct { font-size: 1.1rem; font-weight: 650; padding: 2px 10px; border-radius: 999px;
+         background: linear-gradient(160deg, rgba(102,187,106,.35), rgba(102,187,106,.1)); border: 1px solid rgba(102,187,106,.45); }
+  .chart { position: relative; height: 200px; margin-top: 6px; touch-action: pan-y; }
+  .chart svg { width: 100%; height: 180px; display:block; overflow: visible; }
+  .grid line { stroke: rgba(127,127,127,.16); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .grid line.h { stroke-dasharray: 2 6; }
+  .exp-area { fill: url(#fexp); }
+  .exp-line { fill: none; stroke: rgba(255,255,255,.75); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .act-area { fill: url(#fact); }
+  .act-line { fill: none; stroke: rgb(var(--sun)); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round;
+              filter: drop-shadow(0 0 6px rgba(var(--sun), .6)); }
+  .now { stroke: var(--error-color, #e53935); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; }
+  .hover { stroke: rgba(255,255,255,.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .xlabels { position: relative; height: 16px; font-size: .68rem; color: var(--secondary-text-color); }
+  .xlabels span { position:absolute; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .tip { position:absolute; top: 4px; transform: translateX(-50%); display:flex; flex-direction:column; gap:3px; pointer-events:none;
+         padding: 8px 10px; border-radius: 12px; font-size: .75rem; white-space: nowrap; z-index: 2;
+         background: var(--g-fill), color-mix(in srgb, var(--card-background-color, #1c1c1c) 80%, transparent);
+         -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur); border: 1px solid var(--g-edge); box-shadow: var(--g-shine); }
+  .tip[hidden] { display:none; }
+  .legend { display:flex; gap: 16px; flex-wrap: wrap; align-items:center; font-size: .75rem; color: var(--secondary-text-color); margin-top: 6px; }
+  .legend .calib { margin-left: auto; }
+  .lg-exp, .lg-act { display:inline-block; width: 16px; height: 0; margin-right: 6px; vertical-align: middle; }
+  .lg-exp { border-top: 2px dashed rgba(255,255,255,.75); }
+  .lg-act { border-top: 3px solid rgb(var(--sun)); }
+  .msg { padding: 14px; border-radius: 16px; font-size: .85rem; background: var(--g-fill-soft); border: 1px solid var(--g-edge); }
+  .msg[hidden] { display:none; }
+  @media (max-width: 460px) { .days { grid-template-columns: repeat(2, 1fr); } }
+`;
+
 /* Liquid glass look shared by both cards. */
 const GLASS = `
   :host {
@@ -1511,7 +2105,7 @@ const GLASS = `
       radial-gradient(120% 60% at 0% 0%, rgba(255,255,255,.14), transparent 55%),
       radial-gradient(80% 50% at 100% 100%, rgba(var(--sun), .08), transparent 60%);
   }
-  .modes, .act, .replay, .live-btn, .tile, .chip:not(.modes .chip), .nav:hover, .edit-sel select, .edit-sel input {
+  .modes, .act, .replay, .shade-bar, .live-btn, .tile, .chip:not(.modes .chip), .nav:hover, .edit-sel select, .edit-sel input {
     background: var(--g-fill-soft) !important;
     -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur);
     border: 1px solid var(--g-edge) !important;
@@ -1578,6 +2172,8 @@ const CARDS = [
     `Enphase panel layout – ${en} (${nl})`,
     `${LAYOUT_DESCRIPTION} ${en} card.`,
   ]),
+  ["enphase-forecast-card", EnphaseForecastCard, "Enphase solar forecast",
+   "Expected vs. produced, yesterday to the day after tomorrow, calibrated on your own panels."],
   ["enphase-system-card", EnphaseSystemCard, "Enphase system summary",
    "Solar, home and grid at a glance, today's energy, self-consumption and status."],
 ];

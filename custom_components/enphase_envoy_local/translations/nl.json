@@ -72,12 +72,14 @@
         "data": {
           "scan_interval": "Interval uitlezen",
           "inverter_sensors": "Sensoren per micro-omvormer",
-          "underperform_threshold": "Melding onderprestatie onder"
+          "underperform_threshold": "Melding onderprestatie onder",
+          "forecast": "Opbrengstverwachting (Open-Meteo)"
         },
         "data_description": {
           "scan_interval": "Seconden tussen metingen (5-300).",
           "inverter_sensors": "Micro-omvormers melden zich ongeveer elke 5 minuten.",
-          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van wat de goede panelen op hetzelfde dakvlak opleveren (100 % = net zo goed als de beste)."
+          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van wat de goede panelen op hetzelfde dakvlak opleveren (100 % = net zo goed als de beste).",
+          "forecast": "Verwachte opbrengst per dakvlak op basis van de weersverwachting van Open-Meteo (gratis, zonder account; de locatie van Home Assistant wordt meegestuurd). Wordt automatisch gekalibreerd op wat je panelen echt opleveren."
         }
       }
     }
@@ -241,6 +243,24 @@
       },
       "inverter_performance_week": {
         "name": "Prestatie t.o.v. dakvlak (7 dagen)"
+      },
+      "forecast_today": {
+        "name": "Verwachting vandaag"
+      },
+      "forecast_tomorrow": {
+        "name": "Verwachting morgen"
+      },
+      "forecast_day_after": {
+        "name": "Verwachting overmorgen"
+      },
+      "forecast_remaining_today": {
+        "name": "Verwachting rest van vandaag"
+      },
+      "forecast_power_now": {
+        "name": "Verwacht vermogen nu"
+      },
+      "forecast_performance": {
+        "name": "Opbrengst t.o.v. verwachting"
       }
     },
     "binary_sensor": {

@@ -8,11 +8,13 @@ from pathlib import Path
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
+from .const import CONF_FORECAST, DOMAIN, FORECAST_INTERVAL
 from .coordinator import EnvoyConfigEntry, EnvoyCoordinator
 from .entity import ensure_gateway_device
+from .forecast import SolarForecast
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,6 +86,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnvoyConfigEntry) -> boo
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     coordinator.gateway_device_id = ensure_gateway_device(coordinator)
+    if entry.options.get(CONF_FORECAST, True) and coordinator.data and coordinator.data.inverters:
+        forecast = coordinator.forecast = SolarForecast(hass, coordinator)
+        entry.async_on_unload(
+            async_track_time_interval(hass, forecast.async_update, FORECAST_INTERVAL)
+        )
+        entry.async_create_background_task(
+            hass, forecast.async_update(), f"{DOMAIN} solar forecast"
+        )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     coordinator.async_schedule_layout_refresh()

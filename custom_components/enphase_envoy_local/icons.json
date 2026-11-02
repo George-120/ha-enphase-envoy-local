@@ -143,6 +143,24 @@
       },
       "inverter_performance_week": {
         "default": "mdi:scale-balance"
+      },
+      "forecast_today": {
+        "default": "mdi:solar-power-variant"
+      },
+      "forecast_tomorrow": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "forecast_day_after": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "forecast_remaining_today": {
+        "default": "mdi:timer-sand"
+      },
+      "forecast_power_now": {
+        "default": "mdi:white-balance-sunny"
+      },
+      "forecast_performance": {
+        "default": "mdi:target"
       }
     },
     "binary_sensor": {

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -263,6 +264,66 @@ LAYOUT_SENSOR = SensorEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
+@dataclass(frozen=True, kw_only=True)
+class ForecastSensorDescription(SensorEntityDescription):
+    """Sensor from the solar forecast."""
+
+    value_fn: Callable[[Any], float | None]
+
+
+FORECAST_SENSORS: tuple[ForecastSensorDescription, ...] = (
+    ForecastSensorDescription(
+        key="forecast_today",
+        translation_key="forecast_today",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=1,
+        value_fn=lambda f: f.today,
+    ),
+    ForecastSensorDescription(
+        key="forecast_tomorrow",
+        translation_key="forecast_tomorrow",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=1,
+        value_fn=lambda f: f.tomorrow,
+    ),
+    ForecastSensorDescription(
+        key="forecast_day_after",
+        translation_key="forecast_day_after",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=1,
+        entity_registry_enabled_default=False,
+        value_fn=lambda f: f.day_after,
+    ),
+    ForecastSensorDescription(
+        key="forecast_remaining_today",
+        translation_key="forecast_remaining_today",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=1,
+        value_fn=lambda f: None if f.today is None else max(0.0, round(f.today - (f.so_far or 0), 2)),
+    ),
+    ForecastSensorDescription(
+        key="forecast_power_now",
+        translation_key="forecast_power_now",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda f: f.power_now,
+    ),
+)
+
+FORECAST_VS_ACTUAL = SensorEntityDescription(
+    key="forecast_performance",
+    translation_key="forecast_performance",
+    native_unit_of_measurement=PERCENTAGE,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=0,
+)
+
 TOKEN_SENSOR = SensorEntityDescription(
     key="token_expires",
     translation_key="token_expires",
@@ -465,6 +526,9 @@ async def async_setup_entry(
         entities.append(EnvoyTokenSensor(coordinator, TOKEN_SENSOR))
     if data.inverters:
         entities.append(EnvoyLayoutSensor(coordinator, LAYOUT_SENSOR))
+    if coordinator.forecast is not None:
+        entities.extend(EnvoyForecastSensor(coordinator, desc) for desc in FORECAST_SENSORS)
+        entities.append(EnvoyForecastPerformanceSensor(coordinator, FORECAST_VS_ACTUAL))
     async_add_entities(entities)
 
     # Values this gateway cannot deliver (e.g. 'last 7 days' on firmware 8)
@@ -635,7 +699,14 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                         and entity(serial, "binary_sensor", "inverter_no_output"),
                     }
                 )
-            arrays.append({"label": arr.get("label"), "modules": modules})
+            arrays.append(
+                {
+                    "label": arr.get("label"),
+                    "tilt": arr.get("tilt"),
+                    "azimuth": arr.get("azimuth"),
+                    "modules": modules,
+                }
+            )
         gateway_keys = {
             "production_power": "sensor",
             "production_today": "sensor",
@@ -652,6 +723,10 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
             "last_reading": "sensor",
             "cloud_connected": "binary_sensor",
             "refresh": "button",
+            "forecast_today": "sensor",
+            "forecast_tomorrow": "sensor",
+            "forecast_power_now": "sensor",
+            "forecast_performance": "sensor",
         }
         gateway = {
             key: registry.async_get_entity_id(platform, DOMAIN, f"{self._serial}_{key}")
@@ -665,6 +740,49 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
             "arrays": arrays,
             "layout_status": self.coordinator.layout_status,
         }
+
+
+class EnvoyForecastSensor(EnvoyEntity, SensorEntity):
+    """Expected production from the calibrated solar forecast."""
+
+    entity_description: ForecastSensorDescription
+    _unrecorded_attributes = frozenset({"hourly", "calibration", "updated", "error"})
+
+    @property
+    def available(self) -> bool:
+        """Available once a forecast was computed."""
+        return super().available and self.coordinator.forecast.data.updated is not None
+
+    @property
+    def native_value(self) -> float | None:
+        """Value."""
+        return self.entity_description.value_fn(self.coordinator.forecast.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The hourly forecast on the 'today' sensor (used by the cards)."""
+        if self.entity_description.key != "forecast_today":
+            return None
+        fc = self.coordinator.forecast
+        return {
+            "hourly": fc.hourly_attribute(),
+            "calibration": fc.data.calibration,
+            "updated": fc.data.updated.isoformat() if fc.data.updated else None,
+            "error": fc.data.error,
+        }
+
+
+class EnvoyForecastPerformanceSensor(EnvoyEntity, SensorEntity):
+    """Production so far today compared with what the forecast expected so far."""
+
+    @property
+    def native_value(self) -> float | None:
+        """Percentage."""
+        expected = self.coordinator.forecast.data.so_far
+        actual = self.coordinator.data.production_today if self.coordinator.data else None
+        if not expected or expected < 0.2 or actual is None:
+            return None
+        return round(actual / 1000 / expected * 100, 0)
 
 
 class EnvoyTokenSensor(EnvoyEntity, SensorEntity):

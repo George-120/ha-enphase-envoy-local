@@ -43,6 +43,7 @@ from .api import (
 )
 from .const import (
     CONF_FIRMWARE,
+    CONF_FORECAST,
     CONF_INVERTER_SENSORS,
     CONF_SCAN_INTERVAL,
     CONF_SERIAL,
@@ -377,6 +378,10 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_INVERTER_SENSORS,
                         default=options.get(CONF_INVERTER_SENSORS, True),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_FORECAST,
+                        default=options.get(CONF_FORECAST, True),
                     ): BooleanSelector(),
                     vol.Required(
                         CONF_UNDERPERFORM_THRESHOLD,

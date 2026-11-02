@@ -84,11 +84,36 @@ size: large        # small | medium (default) | large | full
 
 ![Panel layout card](images/panel-layout-card.png)
 
+- **Shade view**: for every panel and every hour of the day, the share of what the good panels on
+  the same roof surface made over the last 14 days (from the long-term statistics). Lower means
+  shade or a weaker panel; hover a panel to see its worst hour. Uses the statistics of any power
+  sensor of the same microinverter, so it works right after installing.
+
+**Solar forecast, calibrated on your own panels** (option, on by default)
+- Hourly irradiance forecast from [Open-Meteo](https://open-meteo.com) (free, no account) for the
+  tilt and orientation of every roof surface in the Enlighten layout. The Home Assistant location is
+  sent to Open-Meteo; turn the option off if you do not want that.
+- Every day the integration learns how many Wh each roof surface really makes per Wh/m² of
+  irradiance (from the microinverters' production of yesterday). Shade, dirt, panel type and
+  inverter limits are therefore in the forecast, without any setup. Microinverter maximum power
+  is respected (clipping).
+- Sensors: forecast today, tomorrow, day after tomorrow, remaining today, power now and
+  production vs. forecast (%)
+- Shown in the **Energy dashboard** (pick this integration as solar forecast) and as a dashed line
+  in the day player
+- **Forecast card** (`custom:enphase-forecast-card`): yesterday, today, tomorrow and the day after
+  as tiles, a chart of expected vs. produced per hour with a tooltip, and how far today is ahead of
+  or behind the forecast
+
+```yaml
+type: custom:enphase-forecast-card
+```
+
 **System summary card** (`custom:enphase-system-card`)
 - Solar → home ↔ grid with live power and animated flow, today's production, use, import and
   export, self-consumption and self-sufficiency bars, panels producing, problems, Enlighten status
 
-Both cards appear in the card picker (search for "Enphase") and have a visual editor.
+All cards appear in the card picker (search for "Enphase") and have a visual editor.
 
 ```yaml
 type: custom:enphase-system-card
