@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.6.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -58,7 +58,9 @@ const T = {
     problem: "needs attention",
     no_output: "no output",
     loading: "Loading history…",
-    no_history: "No sunshine recorded yet today",
+    no_history: "No sunshine recorded on this day",
+    prev_day: "Previous day",
+    next_day: "Next day",
     edit: "Arrange panels",
     save: "Save",
     cancel: "Cancel",
@@ -91,7 +93,9 @@ const T = {
     problem: "aandacht nodig",
     no_output: "geen opbrengst",
     loading: "Geschiedenis laden…",
-    no_history: "Vandaag nog geen zon vastgelegd",
+    no_history: "Geen zon vastgelegd op deze dag",
+    prev_day: "Vorige dag",
+    next_day: "Volgende dag",
     edit: "Indeling aanpassen",
     save: "Opslaan",
     cancel: "Annuleren",
@@ -256,6 +260,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
     return (T[lang] || T.en)[key] || T.en[key] || key;
   }
 
+  _locale() {
+    return this._hass?.locale?.language || this._hass?.language || undefined;
+  }
+
   _renderMessage(text) {
     this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px">${esc(text)}</div></ha-card>`;
     this._built = false;
@@ -353,6 +361,11 @@ class EnphasePanelLayoutCard extends HTMLElement {
           ${this._hass?.user?.is_admin && !editing ? `<button class="chip edit-btn">✎ ${esc(this._t("edit"))}</button>` : ""}
         </div>
         <div class="replay" hidden>
+          <div class="day-pick">
+            <button class="chip day-prev" title="${esc(this._t("prev_day"))}">‹</button>
+            <input type="date" class="day">
+            <button class="chip day-next" title="${esc(this._t("next_day"))}">›</button>
+          </div>
           <button class="play" aria-label="play">▶</button>
           <input type="range" min="0" max="0" value="0" step="1">
           <span class="clock">--:--</span>
@@ -367,7 +380,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
           ${title}
           <div class="stats">
             <div><span class="big total">–</span><span class="unit">W</span><span class="cap">${esc(this._t("now"))}</span></div>
-            <div><span class="big today">–</span><span class="unit">kWh</span><span class="cap">${esc(this._t("today"))}</span></div>
+            <div><span class="big today">–</span><span class="unit">kWh</span><span class="cap tcap">${esc(this._t("today"))}</span></div>
             <div><span class="big active">–</span><span class="unit">/ ${modules.length}</span><span class="cap">${esc(this._t("producing"))}</span></div>
             <div class="problems" hidden><span class="big nprob">0</span><span class="cap">${esc(this._t("problem"))}</span></div>
           </div>
@@ -398,15 +411,27 @@ class EnphasePanelLayoutCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".modes .chip").forEach((b) =>
       b.addEventListener("click", () => {
         this._mode = b.dataset.mode;
-        if (this._replay) this._stopReplay();
+        if (this._replay) this._showFrame(this._replay.index);
         else this._update();
       })
     );
     q(".replay-btn")?.addEventListener("click", () => this._startReplay());
+    const shiftDay = (n) => {
+      const d = new Date(this._replayDay || Date.now());
+      d.setDate(d.getDate() + n);
+      if (d <= new Date()) this._startReplay(d);
+    };
+    q(".day-prev")?.addEventListener("click", () => shiftDay(-1));
+    q(".day-next")?.addEventListener("click", () => shiftDay(1));
+    q(".replay .day")?.addEventListener("change", (e) => {
+      if (!e.target.value) return;
+      const [y, mo, d] = e.target.value.split("-").map(Number);
+      this._startReplay(new Date(y, mo - 1, d));
+    });
     q(".edit-btn")?.addEventListener("click", () => this._startEdit());
     q(".live-btn")?.addEventListener("click", () => this._stopReplay());
     q(".play")?.addEventListener("click", () => (this._timer ? this._stopPlay() : this._play()));
-    q(".replay input")?.addEventListener("input", (e) => {
+    q(".replay input[type=range]")?.addEventListener("input", (e) => {
       this._stopPlay();
       this._showFrame(+e.target.value);
     });
@@ -592,7 +617,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
   }
 
   _paint(rows, replaying) {
-    const mode = replaying ? "power" : this._mode;
+    const mode = this._mode;
     let total = 0, today = 0, active = 0, problems = 0;
     for (const r of rows) {
       if (r.w != null) total += r.w;
@@ -666,7 +691,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
 
     const q = (s) => this.shadowRoot.querySelector(s);
     q(".total").textContent = Math.round(total).toLocaleString();
-    if (!replaying) q(".today").textContent = (today / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 });
+    q(".today").textContent = (today / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 });
     q(".active").textContent = active;
     q(".problems").hidden = replaying || problems === 0;
     q(".nprob").textContent = problems;
@@ -683,7 +708,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     q(".lmax").textContent = legends[2];
     q(".bar").className = `bar ${mode}`;
     this.shadowRoot.querySelectorAll(".modes .chip").forEach((b) =>
-      b.classList.toggle("on", !replaying && b.dataset.mode === this._mode)
+      b.classList.toggle("on", b.dataset.mode === this._mode)
     );
   }
 
@@ -711,12 +736,26 @@ class EnphasePanelLayoutCard extends HTMLElement {
 
   /* ------------------------------------------------------------- replay */
 
-  async _startReplay() {
+  async _startReplay(day) {
     const q = (s) => this.shadowRoot.querySelector(s);
+    this._stopPlay();
+    this._replay = null;
     q(".replay").hidden = false;
     q(".clock").textContent = this._t("loading");
-    const start = new Date();
+    const start = new Date(day || Date.now());
     start.setHours(0, 0, 0, 0);
+    this._replayDay = start.getTime();
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const isToday = end > new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const dayInput = q(".replay .day");
+    const now = new Date();
+    dayInput.value = `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())}`;
+    dayInput.max = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    q(".day-next").disabled = isToday;
+    const until = isToday ? Date.now() : end.getTime();
+
     // Our own power sensor, plus any other power sensor of the same
     // microinverter (e.g. from another integration) as history fallback.
     const hass = this._hass;
@@ -734,13 +773,14 @@ class EnphasePanelLayoutCard extends HTMLElement {
       }
       return ids;
     });
-    const ids = [...new Set(candidates.flat())];
+    const extra = this._modules.flatMap((m) => [m.temperature, m.efficiency].filter(Boolean));
+    const ids = [...new Set([...candidates.flat(), ...extra])];
     let hist = {};
     try {
       hist = await hass.callWS({
         type: "history/history_during_period",
         start_time: start.toISOString(),
-        end_time: new Date().toISOString(),
+        end_time: new Date(until).toISOString(),
         entity_ids: ids,
         minimal_response: true,
         no_attributes: true,
@@ -750,6 +790,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       q(".clock").textContent = String(err?.message || err);
       return;
     }
+    if (this._replayDay !== start.getTime()) return; // another day was picked meanwhile
     const parsed = {};
     for (const [id, states] of Object.entries(hist)) {
       parsed[id] = states
@@ -759,7 +800,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     }
     // Per panel: the candidate with the most sunshine in it.
     const series = {};
-    let first = Infinity;
+    let first = Infinity, last = -Infinity;
     this._modules.forEach((m, i) => {
       let best = [];
       let bestScore = -1;
@@ -772,29 +813,50 @@ class EnphasePanelLayoutCard extends HTMLElement {
         }
       }
       series[`#${i}`] = best;
-      const firstSun = best.find(([, v]) => v > 0);
-      if (firstSun) first = Math.min(first, firstSun[0]);
+      if (m.temperature) series[`t${i}`] = parsed[m.temperature] || [];
+      if (m.efficiency) series[`e${i}`] = parsed[m.efficiency] || [];
+      for (const [t, v] of best) {
+        if (v > 0) {
+          first = Math.min(first, t);
+          last = Math.max(last, t);
+        }
+      }
     });
+    q(".tcap").textContent = isToday
+      ? this._t("today")
+      : start.toLocaleDateString(this._locale(), { weekday: "short", day: "numeric", month: "short" });
     if (!Number.isFinite(first)) {
       q(".clock").textContent = this._t("no_history");
+      this._paint(this._modules.map((m) => this._emptyRow(m)), true);
       return;
     }
-    const now = Date.now();
     const step = 60 * 1000;
     const from = first - step;
+    const to = Math.min(until, last + 15 * step);
     const frames = [];
-    for (let t = from; t <= now; t += step) frames.push(t);
-    if (!frames.length) frames.push(now);
-    this._replay = { series, frames, index: 0 };
-    q(".replay input").max = frames.length - 1;
+    for (let t = from; t <= to; t += step) frames.push(t);
+    if (!frames.length) frames.push(to);
+    // Energy per panel up to every frame (integrated power), for "today" and health.
+    const energy = this._modules.map((m, i) => {
+      let wh = 0, prev = null;
+      return frames.map((t) => {
+        const w = this._valueAtSeries(series[`#${i}`], t) || 0;
+        if (prev != null) wh += ((prev + w) / 2) * (step / 3600000);
+        prev = w;
+        return wh;
+      });
+    });
+    this._replay = { series, frames, energy, index: 0 };
+    q(".replay input[type=range]").max = frames.length - 1;
     this._showFrame(0);
     this._play();
   }
 
-  _valueAt(id, t) {
-    // Linear interpolation between the readings around t: the gateway
-    // reports every few minutes, so this turns steps into a smooth curve.
-    const s = this._replay?.series[id];
+  _emptyRow(m) {
+    return { m, w: null, t: null, eff: null, dc: null, wh: null, perf: null, perfWeek: null, problem: false, noOutput: false };
+  }
+
+  _valueAtSeries(s, t) {
     if (!s || !s.length || t < s[0][0]) return null;
     let lo = 0, hi = s.length - 1;
     while (lo < hi) {
@@ -806,26 +868,52 @@ class EnphasePanelLayoutCard extends HTMLElement {
     const next = s[lo + 1];
     if (!next) return v0;
     const [t1, v1] = next;
-    // A long gap (> 20 min) means no data, not a slow change.
     if (t1 - t0 > 20 * 60 * 1000) return v0;
     return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
   }
 
+  _valueAt(id, t) {
+    // Linear interpolation between the readings around t: the gateway
+    // reports every few minutes, so this turns steps into a smooth curve.
+    return this._valueAtSeries(this._replay?.series[id], t);
+  }
+
   _showFrame(index) {
     if (!this._replay) return;
-    const { frames } = this._replay;
+    const { frames, energy, series } = this._replay;
     index = Math.max(0, Math.min(frames.length - 1, index));
     this._replay.index = index;
     const t = frames[index];
-    const rows = this._modules.map((m, i) => ({
-      m, w: this._valueAt(`#${i}`, t), t: null, eff: null, dc: null, wh: null,
-      perf: null, perfWeek: null, problem: false, noOutput: false,
-    }));
+    const rows = this._modules.map((m, i) => {
+      const w = this._valueAt(`#${i}`, t);
+      const temp = series[`t${i}`]?.length ? this._valueAtSeries(series[`t${i}`], t) : null;
+      const eff = w > 5 && series[`e${i}`]?.length ? this._valueAtSeries(series[`e${i}`], t) : null;
+      return { ...this._emptyRow(m), w, t: temp, eff, wh: energy[i][index] };
+    });
+    // Health up to this moment: like the integration, compared with the
+    // better half of the same roof surface, never above 100 %.
+    const groups = {};
+    rows.forEach((r) => (groups[r.m.label || ""] ||= []).push(r));
+    for (const group of Object.values(groups)) {
+      const values = group.map((r) => r.wh).filter((v) => v != null).sort((a, b) => a - b);
+      if (values.length < 3) continue;
+      const med = (arr) => {
+        const k = arr.length >> 1;
+        return arr.length % 2 ? arr[k] : (arr[k - 1] + arr[k]) / 2;
+      };
+      const mid = med(values);
+      const ref = med(values.filter((v) => v >= mid));
+      if (ref < 50) continue; // the day has hardly started
+      for (const r of group) {
+        r.perf = Math.min(100, (r.wh / ref) * 100);
+        r.problem = false;
+      }
+    }
     this.shadowRoot.querySelector(".roof").classList.add("replaying");
     this._paint(rows, true);
     const q = (s) => this.shadowRoot.querySelector(s);
-    q(".replay input").value = index;
-    q(".clock").textContent = new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    q(".replay input[type=range]").value = index;
+    q(".clock").textContent = new Date(t).toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" });
   }
 
   _play() {
@@ -852,6 +940,9 @@ class EnphasePanelLayoutCard extends HTMLElement {
   _stopReplay() {
     this._stopPlay();
     this._replay = null;
+    this._replayDay = null;
+    const cap = this.shadowRoot.querySelector(".tcap");
+    if (cap) cap.textContent = this._t("today");
     const box = this.shadowRoot.querySelector(".replay");
     if (box) box.hidden = true;
     this.shadowRoot.querySelector(".roof")?.classList.remove("replaying");
@@ -1113,7 +1204,13 @@ const STYLE = `
   .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   .replay { display:flex; align-items:center; gap:10px; }
   .replay[hidden] { display:none; }
-  .replay input { flex:1; accent-color: rgb(var(--sun)); }
+  .replay { flex-wrap: wrap; }
+  .replay input[type=range] { flex:1 1 140px; accent-color: rgb(var(--sun)); }
+  .day-pick { display:flex; align-items:center; gap:4px; }
+  .day-pick input { font: inherit; font-size:.8rem; color: var(--primary-text-color); background: transparent;
+                    border: 1px solid var(--divider-color); border-radius: 14px; padding: 3px 8px; color-scheme: dark light; }
+  .day-pick .chip { padding: 4px 9px; }
+  .day-pick .chip:disabled { opacity:.35; cursor: default; }
   .replay .play { width:32px; height:32px; border-radius:50%; border:0; cursor:pointer;
                   background: rgb(var(--sun)); color:#000; font-size:.8rem; }
   .clock { font-variant-numeric: tabular-nums; min-width: 3.5em; white-space: nowrap; color: var(--secondary-text-color); font-size:.85rem; }

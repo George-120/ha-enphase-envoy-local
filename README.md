@@ -61,8 +61,10 @@ actually reports, so a basic system gets a tidy device page and a fully metered 
   (falls back to a tidy grouping per phase when there is none)
 - Views: **Now** (live power with a sun glow), **Today** (heatmap of kWh per panel), **Health**
   (green/orange/red vs. the roof), **Temperature**, **Efficiency**
-- **Replay the day**: a slider and play button show the sun moving over the roof, smoothly
-  interpolated per minute; uses any other power sensor of the same microinverter as history fallback
+- **Replay any day**: a slider and play button show the sun moving over the roof, smoothly
+  interpolated per minute. Pick yesterday (‹ ›) or any date from the calendar, and switch between
+  Now, Today (kWh up to that moment), Health, Temperature and Efficiency while it plays. Uses any
+  other power sensor of the same microinverter as history fallback, so older days work too
 - Underperforming panels get a red outline; click a panel for its history
 - **Arrange the panels yourself** (✎ *Arrange panels*, admins only): drag every panel to its place,
   click one to rotate it or to put it on another (named) roof surface, and save. Handy when the
