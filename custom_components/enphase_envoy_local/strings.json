@@ -33,10 +33,14 @@
       "reconfigure": {
         "title": "Change address",
         "data": {
-          "host": "Host"
+          "host": "Host",
+          "username": "Enlighten e-mail",
+          "password": "Enlighten password"
         },
         "data_description": {
-          "host": "IP address or host name of the IQ Gateway, e.g. 192.168.1.50"
+          "host": "IP address or host name of the IQ Gateway, e.g. 192.168.1.50",
+          "username": "Optional: fill in if you used a token before. Needed for automatic token renewal and for the panel layout from Enlighten.",
+          "password": "Leave empty to keep the current one."
         }
       }
     },

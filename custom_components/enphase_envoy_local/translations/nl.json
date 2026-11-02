@@ -33,10 +33,14 @@
       "reconfigure": {
         "title": "Adres wijzigen",
         "data": {
-          "host": "Host"
+          "host": "Host",
+          "username": "Enlighten-e-mailadres",
+          "password": "Enlighten-wachtwoord"
         },
         "data_description": {
-          "host": "IP-adres of hostnaam van de IQ Gateway, bijv. 192.168.1.50"
+          "host": "IP-adres of hostnaam van de IQ Gateway, bijv. 192.168.1.50",
+          "username": "Optioneel: vul in als je eerst een token gebruikte. Nodig voor automatisch vernieuwen van het token en voor de plattegrond uit Enlighten.",
+          "password": "Leeg laten om het huidige wachtwoord te houden."
         }
       }
     },

@@ -289,7 +289,7 @@ class EnvoyLocalConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Change the address of the gateway."""
+        """Change the address of the gateway, or add/replace the Enlighten login."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -304,15 +304,41 @@ class EnvoyLocalConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(info["serial"])
                 self._abort_if_unique_id_mismatch(reason="wrong_device")
-                return self.async_update_reload_and_abort(
-                    entry,
-                    data_updates={CONF_HOST: host, CONF_FIRMWARE: info["firmware"]},
-                )
+                updates: dict[str, Any] = {
+                    CONF_HOST: host,
+                    CONF_FIRMWARE: info["firmware"],
+                }
+                if user_input.get(CONF_USERNAME) or user_input.get(CONF_PASSWORD):
+                    auth, errors = await _validate_auth(
+                        self.hass,
+                        host,
+                        info["serial"],
+                        info["firmware"],
+                        {
+                            CONF_USERNAME: user_input.get(CONF_USERNAME),
+                            CONF_PASSWORD: user_input.get(CONF_PASSWORD),
+                        },
+                    )
+                    updates.update(auth)
+                if not errors:
+                    return self.async_update_reload_and_abort(
+                        entry, data_updates=updates
+                    )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema({vol.Required(CONF_HOST): str}),
-                user_input or {CONF_HOST: entry.data[CONF_HOST]},
+                vol.Schema(
+                    {
+                        vol.Required(CONF_HOST): str,
+                        vol.Optional(CONF_USERNAME): EMAIL,
+                        vol.Optional(CONF_PASSWORD): PASSWORD,
+                    }
+                ),
+                {
+                    CONF_HOST: (user_input or {}).get(CONF_HOST) or entry.data[CONF_HOST],
+                    CONF_USERNAME: (user_input or {}).get(CONF_USERNAME)
+                    or entry.data.get(CONF_USERNAME),
+                },
             ),
             errors=errors,
         )
