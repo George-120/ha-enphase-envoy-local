@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.8.0";
+const CARD_VERSION = "1.8.1";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -443,10 +443,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
           </div>
           ${toolbar}
         </div>
+        <div class="mode-note" hidden></div>
         <div class="roof${editing ? " editing" : ""}" style="aspect-ratio:${width} / ${height};width:min(100%, calc(${this._config.max_height || this._size.height} * ${width} / ${height}))">${labelHtml}${panelHtml}</div>
         ${editing ? this._editBarHtml(arrays) : ""}
         ${note}
-        <div class="mode-note" hidden></div>
         <div class="legend"><span class="lname"></span><span class="lmin"></span><span class="bar"></span><span class="lmax"></span></div>
       </ha-card>`;
 
@@ -1539,7 +1539,7 @@ const GLASS = `
     background: linear-gradient(140deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.04) 28%, transparent 46%,
                 transparent 70%, rgba(255,255,255,.05) 100%);
   }
-  .mode-note { margin: 12px auto 0; max-width: 34em; padding: 10px 14px; border-radius: 16px; font-size: .82rem;
+  .mode-note { margin: 0 auto 14px; max-width: 34em; padding: 10px 14px; border-radius: 16px; font-size: .82rem;
                line-height: 1.4; color: var(--primary-text-color); text-align: center;
                background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine);
                -webkit-backdrop-filter: var(--g-blur); backdrop-filter: var(--g-blur); }
