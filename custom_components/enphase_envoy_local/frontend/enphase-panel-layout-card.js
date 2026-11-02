@@ -74,6 +74,7 @@ const T = {
     no_eff_day: "No efficiency was recorded on this day. It is stored from the moment the integration was set up, so earlier days only show power, energy and health.",
     no_data_day: "Nothing was recorded for this view on this day.",
     no_data_yet: "No data for this view yet.",
+    data_since: "No {what} recorded at this moment. It is recorded since {time}; press Live for the current values.",
     edit_short: "Layout",
     edit: "Arrange panels",
     save: "Save",
@@ -123,6 +124,7 @@ const T = {
     no_eff_day: "Op deze dag is geen rendement vastgelegd. Dat wordt bewaard vanaf het moment dat de integratie is ingesteld; eerdere dagen tonen alleen vermogen, opbrengst en gezondheid.",
     no_data_day: "Voor deze weergave is op deze dag niets vastgelegd.",
     no_data_yet: "Nog geen gegevens voor deze weergave.",
+    data_since: "Op dit moment is nog geen {what} vastgelegd. Dat gebeurt sinds {time}; druk op Live voor de huidige waarden.",
     edit_short: "Indeling",
     edit: "Indeling aanpassen",
     save: "Opslaan",
@@ -821,7 +823,20 @@ class EnphasePanelLayoutCard extends HTMLElement {
       note.hidden = !empty;
       if (empty) {
         const pastDay = replaying && this._replayDay && this._replayDay < new Date().setHours(0, 0, 0, 0);
-        note.textContent = mode === "shade"
+        // In a replay: from when this view has data at all.
+        let since = null;
+        if (replaying && (mode === "temperature" || mode === "efficiency")) {
+          const pre = mode === "temperature" ? "t" : "e";
+          const firsts = this._modules
+            .map((m, i) => this._replay?.series[`${pre}${i}`]?.[0]?.[0])
+            .filter((t) => t != null);
+          if (firsts.length) since = Math.min(...firsts);
+        }
+        note.textContent = since
+          ? this._t("data_since")
+              .replace("{what}", this._t(mode === "temperature" ? "temperature" : "efficiency").toLowerCase())
+              .replace("{time}", new Date(since).toLocaleString(this._locale(), { weekday: "short", hour: "2-digit", minute: "2-digit" }))
+          : mode === "shade"
           ? this._t(this._shade?.loading ? "shade_loading" : "shade_none")
           : mode === "efficiency"
             ? this._t(pastDay ? "no_eff_day" : replaying ? "no_eff_yet" : "no_eff_live")
