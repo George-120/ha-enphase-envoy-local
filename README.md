@@ -10,6 +10,18 @@ owner token that firmware 7 and newer require.
 
 *Replay of a day: the sun moves from the back to the front of the roof.*
 
+## Install in three clicks
+
+1. [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=George-120&repository=ha-enphase-envoy-local&category=integration)
+   → **Download** (this picks the right type, *Integration*, for you)
+2. **Restart Home Assistant** (Settings → ⋮ → Restart)
+3. [![Open your Home Assistant instance and start setting up Enphase Envoy Local.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=enphase_envoy_local)
+   — or open **Settings → Devices & services**: your gateway is usually already listed under
+   *Discovered*. Enter your Enlighten e-mail and password and you are done.
+
+The cards appear in the card picker afterwards (search for "Enphase"); press Ctrl+F5 once if they
+do not show up yet.
+
 ## Features
 
 Everything is read locally from the gateway. Entities are only created for what *your* gateway
@@ -99,7 +111,8 @@ title: Zonnepanelen
 
 Or by hand:
 
-1. HACS → ⋮ → **Custom repositories** → add this repository's URL, category **Integration**
+1. HACS → ⋮ → **Custom repositories** → add this repository's URL, type **Integration**
+   (not *Dashboard*: then HACS puts it in `www/community` and Home Assistant never finds it)
 2. Search for **Enphase Envoy Local**, download it and restart Home Assistant
 3. **Settings → Devices & services → Add integration → Enphase Envoy Local**
 
