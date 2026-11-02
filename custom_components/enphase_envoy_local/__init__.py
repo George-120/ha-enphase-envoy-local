@@ -30,6 +30,9 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Serve the panel layout card and make dashboards load it."""
+    if getattr(hass, "http", None) is None or "frontend" not in hass.config.components:
+        # No web interface (e.g. tests or a headless setup): nothing to serve.
+        return True
     from homeassistant.components.http import StaticPathConfig
 
     path = Path(__file__).parent / "frontend" / "enphase-panel-layout-card.js"

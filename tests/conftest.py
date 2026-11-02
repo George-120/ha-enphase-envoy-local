@@ -58,4 +58,5 @@ def mock_client(token: str) -> Generator[AsyncMock]:
         client.async_get_optional.return_value = None
         client.async_get_production_mode.return_value = None
         client.async_check_jwt.return_value = True
+        client.async_fetch_layout.return_value = None
         yield client
