@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.6.0";
+const CARD_VERSION = "1.6.2";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -240,12 +240,21 @@ class EnphasePanelLayoutCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const entityId = this._config.entity || findLayoutEntity(hass);
-    const layout = entityId ? hass.states[entityId] : undefined;
-    if (!layout) {
+    const entityId = this._config.entity || findLayoutEntity(hass) || this._lastEntity;
+    let layout = entityId ? hass.states[entityId] : undefined;
+    const usable = layout && Array.isArray(layout.attributes.arrays) && layout.attributes.arrays.length;
+    if (usable) {
+      this._lastEntity = entityId;
+      this._lastGood = layout;
+    } else if (this._lastGood) {
+      // Sensor briefly unavailable (restart, reload, reconnect): keep the
+      // drawing instead of replacing it with a message.
+      layout = this._lastGood;
+    } else {
       this._renderMessage(this._t("no_entity"));
       return;
     }
+    if (this._built && !this.shadowRoot.querySelector(".roof")) this._built = false;
     this._layoutState = layout;
     const key = JSON.stringify(layout.attributes.arrays);
     if (!this._built || (key !== this._layoutKey && !this._draft)) {
@@ -1327,7 +1336,12 @@ defineCards();
 let tries = 0;
 const keepDefined = setInterval(() => {
   defineCards();
-  if (++tries > 120) clearInterval(keepDefined);
+  if (++tries > 120) {
+    clearInterval(keepDefined);
+    // Keep checking now and then: the frontend may swap its registry later
+    // (e.g. after reconnecting), which would leave the cards undefined.
+    setInterval(defineCards, 10000);
+  }
 }, 500);
 
 window.customCards = window.customCards || [];
