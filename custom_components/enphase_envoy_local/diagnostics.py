@@ -57,7 +57,7 @@ async def async_get_config_entry_diagnostics(
             "source": "enlighten" if coordinator.layout else "phases",
             "fetched": (coordinator.layout or {}).get("fetched"),
             "status": coordinator.layout_status,
-            "trace": client.layout_trace,
+            "trace": getattr(client, "layout_trace", None) or [],
         },
         "probe": await client.async_probe(PROBE_PATHS),
     }

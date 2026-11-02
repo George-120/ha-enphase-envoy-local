@@ -389,11 +389,11 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             layout = await self.client.async_fetch_layout(serials)
         except EnvoyError as err:
             _LOGGER.info("Panel layout not available from Enlighten: %s", err)
-            self.layout_status = "; ".join(self.client.layout_trace) or str(err)
+            self.layout_status = "; ".join(getattr(self.client, "layout_trace", None) or []) or str(err)
             self.async_update_listeners()
             return False
         if layout is None:
-            self.layout_status = "; ".join(self.client.layout_trace)
+            self.layout_status = "; ".join(getattr(self.client, "layout_trace", None) or [])
             _LOGGER.info("Enlighten has no panel layout for this system: %s", self.layout_status)
             self.async_update_listeners()
             return False
