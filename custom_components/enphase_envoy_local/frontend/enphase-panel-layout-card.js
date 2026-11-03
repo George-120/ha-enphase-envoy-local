@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.14.0";
+const CARD_VERSION = "1.15.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -3187,6 +3187,661 @@ try {
 
 // The frontend may swap in its own element registry after loading extra
 // modules, so (re)define until the cards are known where it counts.
+/* ===================================================================
+ * Power factor card: the power triangle on the unit circle.
+ * P (active) on the x-axis, Q (reactive) on the y-axis, S is the vector.
+ * cos φ = P / S is the projection on the x-axis, sin φ = Q / S on the y-axis.
+ * A trail shows where the vector has been over the last hours.
+ *
+ *   type: custom:enphase-power-factor-card
+ *   source: grid | L1 | L2 | L3 | production   (default grid)
+ *   scale: unit | power                         (default unit)
+ *   hours: 2                                    (trail length, 0 = off)
+ * =================================================================== */
+
+const PF_T = {
+  en: {
+    title: "Power factor", grid: "Grid", production: "Solar", unit: "Unit circle", power: "To scale",
+    active: "Active", reactive: "Reactive", apparent: "Apparent", angle: "Phase angle",
+    inductive: "inductive (lagging)", capacitive: "capacitive (leading)", resistive: "resistive",
+    importing: "import", exporting: "export", nopower: "Too little power to determine cos φ",
+    noq: "Reactive power of this phase is disabled: direction taken from the grid total",
+    trail: "last", hours: "h", good: "good", fair: "moderate", poor: "low",
+    source: "Source / Bron", scale: "Scale / Schaal", hoursl: "Trail (hours, 0 = off) / Spoor (uren, 0 = uit)",
+  },
+  nl: {
+    title: "Arbeidsfactor", grid: "Net", production: "Zon", unit: "Eenheidscirkel", power: "Op schaal",
+    active: "Werkelijk", reactive: "Blind", apparent: "Schijnbaar", angle: "Fasehoek",
+    inductive: "inductief (naijlend)", capacitive: "capacitief (voorijlend)", resistive: "ohms",
+    importing: "afname", exporting: "teruglevering", nopower: "Te weinig vermogen om cos φ te bepalen",
+    noq: "Blindvermogen van deze fase staat uit: richting afgeleid van het nettotaal",
+    trail: "laatste", hours: "u", good: "goed", fair: "matig", poor: "laag",
+  },
+};
+
+const PF_SOURCES = ["grid", "L1", "L2", "L3", "production"];
+const PF_C = 150, PF_R = 104;
+
+class EnphasePowerFactorCard extends EnphaseBaseCard {
+  static getStubConfig() {
+    return { source: "grid" };
+  }
+
+  static getConfigForm() {
+    const base = EnphaseBaseCard.getConfigForm();
+    return {
+      schema: [
+        ...base.schema,
+        { name: "source", selector: { select: { mode: "dropdown", options: [
+          { value: "grid", label: "Grid / Net" }, { value: "L1", label: "L1" }, { value: "L2", label: "L2" },
+          { value: "L3", label: "L3" }, { value: "production", label: "Solar / Zon" }] } } },
+        { name: "scale", selector: { select: { mode: "dropdown", options: [
+          { value: "unit", label: "Unit circle / Eenheidscirkel" }, { value: "power", label: "To scale / Op schaal" }] } } },
+        { name: "hours", selector: { number: { min: 0, max: 24, step: 1, mode: "box" } } },
+      ],
+      computeLabel: (s) => ({ source: PF_T.en.source, scale: PF_T.en.scale, hours: PF_T.en.hoursl })[s.name] || base.computeLabel(s),
+    };
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  setConfig(config) {
+    super.setConfig(config);
+    this._src = PF_SOURCES.includes(this._config.source) ? this._config.source : "grid";
+    this._scale = this._config.scale === "power" ? "power" : "unit";
+    this._trail = [];
+    this._cur = null;
+    this._histKey = null;
+  }
+
+  disconnectedCallback() {
+    cancelAnimationFrame(this._raf);
+  }
+
+  _p(key) {
+    return (PF_T[(this._locale() || "en").slice(0, 2)] || PF_T.en)[key] || PF_T.en[key] || key;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._built) this._build();
+    this._update();
+  }
+
+  /* Entity ids for the chosen source. */
+  _ids(src = this._src) {
+    const gw = this._layout()?.attributes.gateway || {};
+    if (src === "grid") return { p: gw.net_power, q: gw.grid_reactive_power, s: gw.grid_apparent_power, pf: gw.power_factor };
+    if (src === "production")
+      return { p: gw.production_power, q: gw.production_reactive_power, s: gw.production_apparent_power, pf: gw.production_power_factor };
+    const k = src.toLowerCase();
+    return { p: gw[`net_phase_power_${k}`], q: gw[`grid_phase_reactive_power_${k}`], s: gw[`grid_phase_apparent_power_${k}`],
+             pf: gw[`grid_phase_power_factor_${k}`], qsign: gw.grid_reactive_power };
+  }
+
+  /* P, Q, S from whatever is available: S and Q measured, or derived from the power factor. */
+  _solve(P, Q, S, PF, qsign) {
+    if (P == null) return null;
+    if (S == null && PF != null && PF > 0.005) S = Math.abs(P) / PF;
+    if (S == null && Q != null) S = Math.hypot(P, Q);
+    if (S == null) return null;
+    S = Math.max(S, Math.abs(P));
+    let derived = false;
+    if (Q == null) {
+      Q = Math.sqrt(Math.max(0, S * S - P * P)) * (qsign != null && qsign < 0 ? -1 : 1);
+      derived = true;
+    }
+    return { P, Q, S, derived };
+  }
+
+  _build() {
+    const c = PF_C, r = PF_R;
+    const tick = (a, l) => {
+      const x = c + Math.cos(a) * (r + 20), y = c - Math.sin(a) * (r + 20);
+      return `<text class="ax" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${l}</text>`;
+    };
+    this.shadowRoot.innerHTML = `
+      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top">
+          <div class="title">${esc(this._config.title || this._p("title"))}</div>
+          <div class="seg src">${PF_SOURCES.map((s) => `<button data-s="${s}">${esc(s.startsWith("L") ? s : this._p(s))}</button>`).join("")}</div>
+        </div>
+        <div class="body">
+          <div class="dial">
+            <svg viewBox="0 0 300 300" class="circ">
+              <defs>
+                <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" class="ahp"/></marker>
+                <radialGradient id="glow"><stop offset="0" stop-color="rgb(var(--pf-col))" stop-opacity=".55"/><stop offset="1" stop-color="rgb(var(--pf-col))" stop-opacity="0"/></radialGradient>
+              </defs>
+              <path class="quad q1" d="M${c},${c} L${c + r},${c} A${r},${r} 0 0 0 ${c},${c - r} z"/>
+              <path class="quad q4" d="M${c},${c} L${c},${c + r} A${r},${r} 0 0 0 ${c + r},${c} z"/>
+              <circle cx="${c}" cy="${c}" r="${r}" class="ring"/>
+              <circle cx="${c}" cy="${c}" r="${r / 2}" class="ring thin"/>
+              <line x1="${c - r - 14}" y1="${c}" x2="${c + r + 16}" y2="${c}" class="axis" marker-end="url(#ah)"/>
+              <line x1="${c}" y1="${c + r + 14}" x2="${c}" y2="${c - r - 16}" class="axis" marker-end="url(#ah)"/>
+              <text class="axl" x="${c + r + 12}" y="${c - 8}" text-anchor="end">P</text>
+              <text class="axl" x="${c + 8}" y="${c - r - 6}">Q</text>
+              ${tick(0, "0°")}${tick(Math.PI / 2, "90°")}${tick(Math.PI, "180°")}${tick(-Math.PI / 2, "270°")}
+              <text class="qcap" x="${c + r - 4}" y="${c - r + 10}" text-anchor="end">${esc(this._p("importing"))} · ind.</text>
+              <text class="qcap" x="${c + r - 4}" y="${c + r - 4}" text-anchor="end">${esc(this._p("importing"))} · cap.</text>
+              <text class="qcap" x="${c - r + 4}" y="${c - r + 10}">${esc(this._p("exporting"))}</text>
+              <text class="qcap" x="${c - r + 4}" y="${c + r - 4}">${esc(this._p("exporting"))}</text>
+              <g class="trail"></g>
+              <line class="proj px"/><line class="proj py"/>
+              <line class="cosl"/><line class="sinl"/>
+              <path class="arc"/>
+              <text class="arct">φ</text>
+              <line class="vec" x1="${c}" y1="${c}"/>
+              <circle class="halo" r="22" fill="url(#glow)"/>
+              <circle class="dot" r="7"/>
+              <text class="lab cosx" text-anchor="middle">cos φ</text>
+              <text class="lab siny" text-anchor="end">sin φ</text>
+              <text class="lab st">S</text>
+            </svg>
+            <button class="scale"></button>
+          </div>
+          ${this._sideHtml()}
+        </div>
+      </ha-card>`;
+    this._wire();
+    this._built = true;
+  }
+
+  _sideHtml() {
+    return `
+          <div class="side">
+            <button class="hero"><span class="cap">cos φ</span><b class="pfv">–</b><span class="kind"></span><span class="bar"><i></i></span></button>
+            <div class="tiles">
+              <button class="pill tp"><span>${esc(this._p("active"))} · P</span><b>–</b></button>
+              <button class="pill tq"><span>${esc(this._p("reactive"))} · Q</span><b>–</b></button>
+              <button class="pill ts"><span>${esc(this._p("apparent"))} · S</span><b>–</b></button>
+              <div class="pill ta"><span>${esc(this._p("angle"))} · φ</span><b>–</b></div>
+            </div>
+            <div class="note" hidden></div>
+          </div>`;
+  }
+
+  _wire() {
+    const q = (s) => this.shadowRoot.querySelector(s);
+    this.shadowRoot.querySelectorAll(".src button").forEach((b) =>
+      b.addEventListener("click", () => {
+        this._src = b.dataset.s;
+        this._trail = [];
+        this._histKey = null;
+        this._update();
+      })
+    );
+    q(".scale").addEventListener("click", () => {
+      this._scale = this._scale === "unit" ? "power" : "unit";
+      this._update();
+    });
+    q(".tp").addEventListener("click", () => this._more(this._ids().p));
+    q(".tq").addEventListener("click", () => this._more(this._ids().q || this._ids().qsign));
+    q(".ts").addEventListener("click", () => this._more(this._ids().s));
+    q(".hero").addEventListener("click", () => this._more(this._ids().pf));
+  }
+
+  async _loadHistory() {
+    const hours = this._config.hours ?? 2;
+    const ids = this._ids();
+    const key = `${this._src}|${hours}|${Math.floor(Date.now() / 300000)}`;
+    if (!hours || this._histKey === key || !ids.p) return;
+    this._histKey = key;
+    const want = [ids.p, ids.q, ids.s, ids.pf, ids.qsign].filter((id) => id && this._hass.states[id]);
+    try {
+      const stats = await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: new Date(Date.now() - hours * 3600e3).toISOString(),
+        statistic_ids: want,
+        period: "5minute",
+        types: ["mean"],
+      });
+      const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
+      const at = {};
+      for (const [id, rows] of Object.entries(stats)) for (const row of rows) {
+        if (row.mean == null) continue;
+        (at[toMs(row.start)] ||= {})[id] = row.mean;
+      }
+      const pts = Object.keys(at).map(Number).sort((a, b) => a - b).map((t) => {
+        const v = at[t];
+        const s = this._solve(v[ids.p], ids.q ? v[ids.q] : null, ids.s ? v[ids.s] : null, ids.pf ? v[ids.pf] : null, v[ids.qsign] ?? v[ids.q]);
+        return s && s.S >= 5 ? { t, ...s } : null;
+      }).filter(Boolean);
+      if (this._src === key.split("|")[0]) {
+        this._hist = pts;
+        this._draw(false);
+      }
+    } catch (e) {
+      /* no statistics (yet) */
+    }
+  }
+
+  _update() {
+    if (!this._built || !this._layout()) return;
+    const q = (s) => this.shadowRoot.querySelector(s);
+    this.shadowRoot.querySelectorAll(".src button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.s === this._src);
+      const ids = this._ids(b.dataset.s);
+      b.hidden = !ids.p || !this._hass.states[ids.p];
+    });
+    q(".scale").textContent = `◎ ${this._p(this._scale)}`;
+    const ids = this._ids();
+    const v = (id) => (id ? num(this._hass, id) : null);
+    const sol = this._solve(v(ids.p), v(ids.q), v(ids.s), v(ids.pf), v(ids.qsign));
+    this._now = sol && sol.S >= 5 ? sol : null;
+    if (this._now) {
+      const last = this._trail[this._trail.length - 1];
+      if (!last || Date.now() - last.t > 15000) this._trail.push({ t: Date.now(), ...this._now });
+      if (this._trail.length > 240) this._trail.shift();
+    }
+    if (this._histKey?.split("|")[0] !== this._src) this._hist = [];
+    this._loadHistory();
+
+    const P = this._now?.P, Q = this._now?.Q, S = this._now?.S;
+    const pf = this._now ? Math.abs(P) / S : null;
+    q(".pfv").textContent = pf == null ? "–" : pf.toFixed(2).replace(".", (0.5).toLocaleString(this._locale()).charAt(1));
+    const grade = pf == null ? "" : pf >= 0.95 ? "good" : pf >= 0.8 ? "fair" : "poor";
+    this.style.setProperty("--pf-col", { good: "102,187,106", fair: "255,167,38", poor: "239,83,80" }[grade] || "120,144,156");
+    q(".hero").dataset.g = grade;
+    q(".hero .bar i").style.width = `${((pf ?? 0) * 100).toFixed(1)}%`;
+    q(".kind").textContent = this._now
+      ? `${this._p(grade)} · ${Math.abs(Q) < S * 0.05 ? this._p("resistive") : this._p(Q > 0 ? "inductive" : "capacitive")}`
+      : this._p("nopower");
+    q(".tp b").textContent = this._now ? `${fmt(P)} W` : "–";
+    q(".tq b").textContent = this._now ? `${fmt(Q)} var` : "–";
+    q(".ts b").textContent = this._now ? `${fmt(S)} VA` : "–";
+    q(".ta b").textContent = this._now ? `${fmt(Math.acos(Math.min(1, pf)) * 180 / Math.PI, 1)}°` : "–";
+    const note = q(".note");
+    note.hidden = !(this._now?.derived);
+    note.textContent = this._p("noq");
+    this._draw(true);
+  }
+
+  /* Radius of a point: always 1 on the unit circle, or S relative to the largest S. */
+  _rad(pt, max) {
+    return this._scale === "unit" ? 1 : Math.min(1, pt.S / max);
+  }
+
+  _draw(animate) {
+    const pts = [...(this._hist || []), ...this._trail];
+    const max = Math.max(1, ...pts.map((p) => p.S), this._now?.S || 0) * 1.08;
+    const c = PF_C, r = PF_R;
+    const xy = (pt) => {
+      const a = Math.atan2(pt.Q, pt.P), k = this._rad(pt, max) * r;
+      return [c + Math.cos(a) * k, c - Math.sin(a) * k];
+    };
+    const tg = this.shadowRoot.querySelector(".trail");
+    if (pts.length > 1) {
+      const xs = pts.map(xy);
+      const n = xs.length;
+      tg.innerHTML =
+        `<polyline points="${xs.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}"/>` +
+        xs.map(([x, y], i) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.4 + 1.8 * i / n).toFixed(2)}" style="opacity:${(0.12 + 0.6 * i / n).toFixed(2)}"/>`).join("");
+    } else tg.innerHTML = "";
+
+    const target = this._now ? { a: Math.atan2(this._now.Q, this._now.P), k: this._rad(this._now, max) } : { a: 0, k: 0 };
+    const from = this._cur || target;
+    // Turn the shortest way round.
+    let da = target.a - from.a;
+    if (da > Math.PI) da -= 2 * Math.PI;
+    if (da < -Math.PI) da += 2 * Math.PI;
+    cancelAnimationFrame(this._raf);
+    const t0 = performance.now(), dur = animate && this._cur ? 900 : 0;
+    const step = (now) => {
+      const f = dur ? Math.min(1, (now - t0) / dur) : 1;
+      const e = 1 - Math.pow(1 - f, 3);
+      this._cur = { a: from.a + da * e, k: from.k + (target.k - from.k) * e };
+      this._geom(this._cur);
+      if (f < 1) this._raf = requestAnimationFrame(step);
+    };
+    if (dur) this._raf = requestAnimationFrame(step);
+    else step(t0);
+  }
+
+  _geom({ a, k }) {
+    const c = PF_C, r = PF_R, sr = this.shadowRoot;
+    const set = (sel, attrs) => {
+      const el = sr.querySelector(sel);
+      for (const [n, v] of Object.entries(attrs)) el.setAttribute(n, typeof v === "number" ? v.toFixed(2) : v);
+    };
+    const L = k * r, x = c + Math.cos(a) * L, y = c - Math.sin(a) * L;
+    const on = this._now ? "1" : "0";
+    set(".vec", { x2: x, y2: y, opacity: on });
+    set(".dot", { cx: x, cy: y, opacity: on });
+    set(".halo", { cx: x, cy: y, opacity: on });
+    set(".proj.px", { x1: x, y1: y, x2: x, y2: c, opacity: on });
+    set(".proj.py", { x1: x, y1: y, x2: c, y2: y, opacity: on });
+    set(".cosl", { x1: c, y1: c, x2: x, y2: c, opacity: on });
+    set(".sinl", { x1: c, y1: c, x2: c, y2: y, opacity: on });
+    const down = y > c, left = x < c;
+    set(".cosx", { x: (c + x) / 2, y: c + (down ? -9 : 17), opacity: on && Math.abs(x - c) > 22 ? "1" : "0" });
+    set(".siny", { x: c + (left ? 30 : -7), y: (c + y) / 2 + 4, opacity: on && Math.abs(y - c) > 14 ? "1" : "0" });
+    sr.querySelector(".siny").setAttribute("text-anchor", left ? "start" : "end");
+    set(".st", { x: x + Math.cos(a) * 14 - 4, y: y - Math.sin(a) * 14 + 4, opacity: on });
+    // Angle arc from the nearest P half-axis to the vector: that angle is φ in cos φ.
+    const base = Math.cos(a) >= 0 ? 0 : Math.PI;
+    let d = a - base;
+    if (d > Math.PI) d -= 2 * Math.PI;
+    if (d < -Math.PI) d += 2 * Math.PI;
+    const ar = 30, p0 = [c + Math.cos(base) * ar, c - Math.sin(base) * ar], p1 = [c + Math.cos(a) * ar, c - Math.sin(a) * ar];
+    const sweep = (d > 0) !== (base === Math.PI) ? 0 : 1;
+    const sw = base === 0 ? (d > 0 ? 0 : 1) : (d > 0 ? 0 : 1);
+    set(".arc", { d: `M${p0[0].toFixed(2)},${p0[1].toFixed(2)} A${ar},${ar} 0 0 ${sw} ${p1[0].toFixed(2)},${p1[1].toFixed(2)}`, opacity: on && Math.abs(d) > 0.03 && L > 34 ? "1" : "0" });
+    const mid = base + d / 2;
+    set(".arct", { x: c + Math.cos(mid) * (ar + 11) - 4, y: c - Math.sin(mid) * (ar + 11) + 4, opacity: on && Math.abs(d) > 0.12 && L > 34 ? "1" : "0" });
+    void sweep;
+  }
+}
+
+const PF_STYLE = `
+  :host { --pf-col: 120,144,156; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .seg { display:inline-flex; flex-wrap: wrap; gap:2px; padding:3px; border-radius:999px; background: rgba(127,127,127,.12); }
+  .seg button { font: inherit; font-size: .78rem; border:0; background: transparent; color: var(--secondary-text-color);
+                padding: 5px 11px; border-radius: 999px; cursor:pointer; }
+  .seg button[hidden] { display:none; }
+  .seg button.on { color: var(--primary-text-color); font-weight: 600;
+                   background: linear-gradient(160deg, rgba(255,255,255,.26), rgba(255,255,255,.08));
+                   box-shadow: 0 4px 14px -4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.35); }
+  .body { display:grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: center; container-type: inline-size; }
+  @container (max-width: 1px) {}
+  .dial { position: relative; }
+  .circ { width: 100%; max-height: 420px; display:block; overflow: visible; }
+  .ring { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 1.2; }
+  .ring.thin { stroke: rgba(255,255,255,.08); stroke-dasharray: 2 4; }
+  .quad { fill: rgba(255,255,255,.025); }
+  .axis { stroke: rgba(255,255,255,.45); stroke-width: 1.2; }
+  .ahp { fill: rgba(255,255,255,.55); }
+  .ax { font-size: 10px; fill: rgba(120,160,255,.85); }
+  .axl { font-size: 13px; font-weight: 700; fill: var(--primary-text-color); font-style: italic; }
+  .qcap { font-size: 8.5px; fill: var(--secondary-text-color); opacity: .75; letter-spacing: .02em; }
+  .trail polyline { fill: none; stroke: rgba(var(--pf-col), .35); stroke-width: 1.2; stroke-linejoin: round; }
+  .trail circle { fill: rgb(var(--pf-col)); }
+  .proj { stroke: rgba(255,255,255,.55); stroke-width: 1; stroke-dasharray: 4 3; }
+  .cosl { stroke: rgb(255,176,32); stroke-width: 4; stroke-linecap: round; }
+  .sinl { stroke: rgb(171,71,188); stroke-width: 4; stroke-linecap: round; }
+  .arc { fill: none; stroke: rgb(120,160,255); stroke-width: 1.5; }
+  .arct { font-size: 12px; fill: rgb(120,160,255); font-style: italic; }
+  .vec { stroke: rgb(var(--pf-col)); stroke-width: 3.2; stroke-linecap: round; filter: drop-shadow(0 0 6px rgba(var(--pf-col), .6)); }
+  .dot { fill: rgb(var(--pf-col)); stroke: #fff; stroke-width: 2; }
+  .lab { font-size: 11px; font-style: italic; font-weight: 600; }
+  .cosx { fill: rgb(255,176,32); }
+  .siny { fill: rgb(200,120,220); }
+  .st { fill: var(--primary-text-color); font-size: 14px; font-weight: 700; }
+  .scale { position:absolute; left: 0; bottom: 0; font-size: .7rem; padding: 4px 10px; border-radius: 999px; cursor:pointer;
+           color: var(--secondary-text-color); background: var(--g-fill-soft); border: 1px solid var(--g-edge); }
+  .side { display:flex; flex-direction:column; gap: 10px; min-width: 0; }
+  .hero { display:flex; flex-direction:column; align-items:flex-start; gap: 2px; padding: 14px 16px; border-radius: 20px; cursor:pointer; text-align:left;
+          background: linear-gradient(150deg, rgba(var(--pf-col), .22), rgba(var(--pf-col), .05)); border: 1px solid rgba(var(--pf-col), .45);
+          box-shadow: var(--g-shine); transition: background .6s, border-color .6s; }
+  .pfv { font-size: 2.6rem; line-height: 1.05; font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--pf-col)); transition: color .6s; }
+  .kind { font-size: .8rem; color: var(--secondary-text-color); }
+  .bar { width: 100%; height: 6px; border-radius: 99px; background: rgba(255,255,255,.1); margin-top: 8px; overflow: hidden; position: relative; }
+  .bar::after { content:""; position:absolute; left:95%; top:0; bottom:0; width:2px; background: rgba(255,255,255,.6); }
+  .bar i { display:block; height:100%; border-radius: 99px; background: rgb(var(--pf-col)); transition: width 1s cubic-bezier(.2,.9,.25,1); }
+  .tiles { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .tiles .pill { min-width: 0; }
+  .tiles .pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .ta { cursor: default; }
+  .note { font-size: .72rem; color: var(--secondary-text-color); line-height: 1.35; }
+  .note[hidden] { display:none; }
+  :host([size="small"]) .body { grid-template-columns: 1fr; }
+  :host([size="small"]) .pfv { font-size: 2rem; }
+  @media (max-width: 600px) { .body { grid-template-columns: 1fr; } }
+`;
+
+/* ===================================================================
+ * cos φ as a glass of beer: beer = active power P, foam = reactive
+ * power Q, the whole glass = apparent power S. cos φ = beer / glass.
+ * The bubbles are live: the more active power, the more bubbles.
+ *
+ *   type: custom:enphase-beer-card
+ * =================================================================== */
+
+const BEER_T = {
+  en: { title: "cos φ in a glass of beer", beer: "Beer · P", foam: "Foam · Q", glass: "Glass · S" },
+  nl: { title: "cos φ in een glas bier", beer: "Bier · P", foam: "Schuim · Q", glass: "Glas · S" },
+};
+const B_TOP = 24, B_FLOOR = 292, B_H = B_FLOOR - B_TOP;
+const bLeft = (y) => 34 + ((y - 20) * 20) / 272;
+const bRight = (y) => 220 - bLeft(y);
+
+/* Small seeded random so the glass looks the same on every redraw. */
+function seeded(seed) {
+  let s = seed;
+  return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+}
+
+class EnphaseBeerCard extends EnphasePowerFactorCard {
+  static getStubConfig() {
+    return { source: "grid" };
+  }
+
+  getCardSize() {
+    return 7;
+  }
+
+  _b(key) {
+    return (BEER_T[(this._locale() || "en").slice(0, 2)] || BEER_T.en)[key] || BEER_T.en[key];
+  }
+
+  _build() {
+    const rnd = seeded(7);
+    // Bubbles rise in a few streams from nucleation points on the bottom, plus loose ones.
+    const streams = [62, 88, 104, 131, 150, 163];
+    let bubbles = "";
+    for (let i = 0; i < 64; i++) {
+      const x = i < 40 ? streams[i % streams.length] + (rnd() - 0.5) * 6 : 50 + rnd() * 120;
+      const r = 0.7 + rnd() * (i < 40 ? 1.3 : 2);
+      const d = 2.6 + rnd() * 3.4;
+      bubbles += `<circle class="bub" data-i="${i}" cx="${x.toFixed(1)}" cy="${B_FLOOR - 2}" r="${r.toFixed(2)}"
+        style="--d:${d.toFixed(2)}s;--dl:-${(rnd() * d).toFixed(2)}s;--w:${((rnd() - 0.5) * 10).toFixed(1)}px"/>`;
+    }
+    let drops = "";
+    for (let i = 0; i < 46; i++) {
+      const y = 40 + rnd() * 250, x = bLeft(y) + 4 + rnd() * (bRight(y) - bLeft(y) - 8);
+      const rx = 0.8 + rnd() * 2.4;
+      drops += `<g class="drop"><ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${rx.toFixed(2)}" ry="${(rx * (1.1 + rnd() * 0.5)).toFixed(2)}"/>
+        <circle cx="${(x - rx * 0.35).toFixed(1)}" cy="${(y - rx * 0.4).toFixed(1)}" r="${(rx * 0.32).toFixed(2)}" class="dh"/></g>`;
+    }
+    this._bumps = Array.from({ length: 9 }, () => 0.5 + rnd());
+    this._lace = Array.from({ length: 18 }, () => [rnd(), 1 + rnd() * 2.6]);
+    const inner = `M${bLeft(B_TOP)},${B_TOP} L${bRight(B_TOP)},${B_TOP} L${bRight(B_FLOOR)},${B_FLOOR} L${bLeft(B_FLOOR)},${B_FLOOR} Z`;
+    this.shadowRoot.innerHTML = `
+      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${BEER_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top">
+          <div class="title">${esc(this._config.title || this._b("title"))}</div>
+          <div class="seg src">${PF_SOURCES.map((s) => `<button data-s="${s}">${esc(s.startsWith("L") ? s : this._p(s))}</button>`).join("")}</div>
+        </div>
+        <div class="body">
+          <div class="dial">
+            <svg viewBox="0 0 330 340" class="glass">
+              <defs>
+                <clipPath id="inner"><path d="${inner}"/></clipPath>
+                <clipPath id="beerclip"><rect class="beerrect" x="0" width="220" y="${B_FLOOR}" height="0"/></clipPath>
+                <clipPath id="wetclip"><rect class="wetrect" x="0" width="220" y="${B_FLOOR}" height="40"/></clipPath>
+                <linearGradient id="beer" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffd86a"/><stop offset=".35" stop-color="#f5ae22"/>
+                  <stop offset=".8" stop-color="#d4840b"/><stop offset="1" stop-color="#b06a05"/></linearGradient>
+                <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#3a1d00" stop-opacity=".55"/><stop offset=".14" stop-color="#3a1d00" stop-opacity="0"/>
+                  <stop offset=".24" stop-color="#fff6d0" stop-opacity=".28"/><stop offset=".34" stop-color="#fff" stop-opacity="0"/>
+                  <stop offset=".78" stop-color="#3a1d00" stop-opacity="0"/><stop offset="1" stop-color="#3a1d00" stop-opacity=".5"/></linearGradient>
+                <linearGradient id="foam" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fffdf7"/><stop offset=".55" stop-color="#fbf1dc"/><stop offset="1" stop-color="#ecd3a0"/></linearGradient>
+                <linearGradient id="fshade" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#8a6a3a" stop-opacity=".35"/><stop offset=".2" stop-color="#8a6a3a" stop-opacity="0"/>
+                  <stop offset=".8" stop-color="#8a6a3a" stop-opacity="0"/><stop offset="1" stop-color="#8a6a3a" stop-opacity=".32"/></linearGradient>
+                <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity=".28"/></linearGradient>
+                <radialGradient id="shadow"><stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+                <filter id="ftex" x="0" y="0" width="1" height="1">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.22 0.3" numOctaves="3" seed="3" result="n"/>
+                  <feColorMatrix in="n" type="matrix" values="0 0 0 0 .62  0 0 0 0 .5  0 0 0 0 .33  -2.4 0 0 0 1.32" result="spots"/>
+                  <feComposite in="spots" in2="SourceGraphic" operator="in"/>
+                </filter>
+              </defs>
+              <ellipse cx="110" cy="322" rx="78" ry="9" fill="url(#shadow)"/>
+              <path class="gbody" d="M30,18 L190,18 L170,314 Q169,320 162,320 L58,320 Q51,320 50,314 Z"/>
+              <g clip-path="url(#inner)">
+                <g class="liquid">
+                  <rect class="beer" x="0" width="220" fill="url(#beer)"/>
+                  <g clip-path="url(#beerclip)"><g class="bubs">${bubbles}</g></g>
+                  <rect class="beer" x="0" width="220" fill="url(#shade)"/>
+                  <path class="foamp" fill="url(#foam)"/>
+                  <path class="foamp tex" fill="#fff" filter="url(#ftex)"/>
+                  <path class="foamp" fill="url(#fshade)"/>
+                  <g class="fbubs"></g>
+                  <path class="lace"/>
+                </g>
+              </g>
+              <path class="gbase" d="M${bLeft(B_FLOOR) - 2},${B_FLOOR} L${bRight(B_FLOOR) + 2},${B_FLOOR} L169.6,314 Q169,320 162,320 L58,320 Q51,320 50.4,314 Z"/>
+              <ellipse class="gbase-hl" cx="110" cy="${B_FLOOR + 2}" rx="${(bRight(B_FLOOR) - bLeft(B_FLOOR)) / 2}" ry="3"/>
+              <g clip-path="url(#wetclip)" class="drops">${drops}</g>
+              <path class="hl1" d="M40,26 L50,26 L64,300 L58,300 Z"/>
+              <path class="hl2" d="M55,30 L58,30 L70,296 L68,296 Z"/>
+              <path class="hl3" d="M178,28 L184,28 L166,306 L162,306 Z"/>
+              <path class="gedge" d="M30,18 L190,18 L170,314 Q169,320 162,320 L58,320 Q51,320 50,314 Z"/>
+              <line class="rim" x1="30" y1="18.5" x2="190" y2="18.5"/>
+              <g class="tags">
+                <line class="lead lf"/><text class="tag tf"><tspan class="tn"></tspan><tspan class="tv" dy="15"></tspan></text>
+                <line class="lead lb"/><text class="tag tb"><tspan class="tn"></tspan><tspan class="tv" dy="15"></tspan></text>
+                <path class="brace"/>
+                <text class="tag ts2"><tspan class="tn"></tspan><tspan class="tv" dy="15"></tspan></text>
+              </g>
+            </svg>
+            <button class="scale"></button>
+          </div>
+          ${this._sideHtml()}
+        </div>
+      </ha-card>`;
+    this._wire();
+    this._built = true;
+  }
+
+  _draw(animate) {
+    const pts = [...(this._hist || []), ...this._trail];
+    const max = Math.max(1, ...pts.map((p) => p.S), this._now?.S || 0) * 1.05;
+    const pf = this._now ? Math.abs(this._now.P) / this._now.S : 0;
+    const fill = !this._now ? 0 : this._scale === "unit" ? 0.88 : Math.max(0.12, Math.min(0.9, this._now.S / max));
+    const target = { fill, pf };
+    const from = this._lvl || { fill: 0, pf };
+    cancelAnimationFrame(this._raf);
+    const t0 = performance.now(), dur = animate ? 1400 : 0;
+    const step = (now) => {
+      const f = dur ? Math.min(1, (now - t0) / dur) : 1;
+      // Pour in: ease out with a little settle at the end.
+      const e = f === 1 ? 1 : 1 - Math.pow(2, -9 * f) * Math.cos(f * 7);
+      this._lvl = { fill: from.fill + (target.fill - from.fill) * e, pf: from.pf + (target.pf - from.pf) * e };
+      this._geom(this._lvl);
+      if (f < 1) this._raf = requestAnimationFrame(step);
+    };
+    if (dur) this._raf = requestAnimationFrame(step);
+    else step(t0);
+    // Live bubbles: more active power, more bubbles.
+    const P = Math.abs(this._now?.P || 0);
+    const n = this._now ? Math.round(10 + 54 * Math.min(1, Math.sqrt(P / 3000))) : 0;
+    this.shadowRoot.querySelectorAll(".bub").forEach((b) => b.classList.toggle("on", +b.dataset.i < n));
+  }
+
+  _geom({ fill, pf }) {
+    const sr = this.shadowRoot;
+    const set = (sel, attrs) => sr.querySelectorAll(sel).forEach((el) => {
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, typeof v === "number" ? v.toFixed(2) : v);
+    });
+    const foamTop = B_FLOOR - fill * B_H;
+    const foamH = fill > 0 ? Math.max(4, fill * (1 - pf) * B_H) : 0;
+    const beerTop = Math.min(B_FLOOR, foamTop + foamH);
+    set(".beer", { y: beerTop, height: B_FLOOR - beerTop + 2 });
+    set(".beerrect", { y: beerTop, height: B_FLOOR - beerTop });
+    set(".wetrect", { y: foamTop - 4, height: B_FLOOR - foamTop + 30 });
+    // Foam: a domed, bumpy head, a little higher against the glass.
+    if (fill > 0) {
+      const l = bLeft(foamTop), r = bRight(foamTop), w = r - l, n = this._bumps.length;
+      const dome = Math.min(7, foamH * 0.6);
+      let d = `M${(l - 2).toFixed(2)},${(beerTop + 1).toFixed(2)} L${(l - 2).toFixed(2)},${(foamTop - 1.5).toFixed(2)}`;
+      for (let i = 0; i < n; i++) {
+        const x1 = l + (w * (i + 1)) / n;
+        const rise = dome * Math.sin((Math.PI * (i + 0.5)) / n);
+        const by = foamTop - rise - this._bumps[i] * Math.min(3.2, foamH * 0.3);
+        d += ` Q${(l + (w * (i + 0.5)) / n).toFixed(2)},${by.toFixed(2)} ${x1.toFixed(2)},${(foamTop - dome * Math.sin((Math.PI * (i + 1)) / n) * 0.8).toFixed(2)}`;
+      }
+      d += ` L${(r + 2).toFixed(2)},${(beerTop + 1).toFixed(2)} Z`;
+      set(".foamp", { d });
+      // Bigger bubbles where foam meets beer, and lacing on the glass above the foam.
+      const bl = bLeft(beerTop), br = bRight(beerTop);
+      sr.querySelector(".fbubs").innerHTML = foamH > 6
+        ? this._lace.map(([u, rr], i) => `<circle cx="${(bl + 6 + u * (br - bl - 12)).toFixed(1)}" cy="${(beerTop - 1.5 - (i % 3) * 2.2).toFixed(1)}" r="${rr.toFixed(2)}"/>`).join("")
+        : "";
+      const ly = foamTop - 10;
+      set(".lace", { d: `M${bLeft(ly) + 3},${ly} q6,4 12,1 q5,5 9,0 M${bRight(ly) - 22},${ly + 2} q5,3 10,0 q4,4 9,1`, opacity: fill > 0.3 ? 0.5 : 0 });
+    } else {
+      set(".foamp", { d: "" });
+      sr.querySelector(".fbubs").innerHTML = "";
+    }
+    // Labels to the right of the glass.
+    const on = this._now && fill > 0;
+    const tx = 212;
+    const fy = foamTop + foamH / 2, by = (beerTop + B_FLOOR) / 2;
+    set(".lf", { x1: bRight(fy) - 4, y1: fy, x2: tx - 4, y2: Math.min(fy, by - 34), opacity: on ? 1 : 0 });
+    set(".lb", { x1: bRight(by) - 4, y1: by, x2: tx - 4, y2: Math.max(by, fy + 34), opacity: on ? 1 : 0 });
+    set(".tf", { x: tx, y: Math.min(fy, by - 34) - 2, opacity: on ? 1 : 0 });
+    set(".tb", { x: tx, y: Math.max(by, fy + 34) - 2, opacity: on ? 1 : 0 });
+    set(".tf tspan", { x: tx });
+    set(".tb tspan", { x: tx });
+    const q = (s) => sr.querySelector(s);
+    q(".tf .tn").textContent = this._b("foam");
+    q(".tb .tn").textContent = this._b("beer");
+    q(".tf .tv").textContent = this._now ? `${fmt(Math.abs(this._now.Q))} var` : "";
+    q(".tb .tv").textContent = this._now ? `${fmt(Math.abs(this._now.P))} W` : "";
+    // Brace over the whole contents = S.
+    const bx = 300;
+    set(".brace", { d: `M${bx - 6},${foamTop} q6,0 6,6 L${bx},${(foamTop + B_FLOOR) / 2 - 6} q0,6 6,6 q-6,0 -6,6 L${bx},${B_FLOOR - 6} q0,6 -6,6`, opacity: on ? 1 : 0 });
+    set(".ts2", { x: bx + 10, y: (foamTop + B_FLOOR) / 2 - 4, opacity: on ? 1 : 0 });
+    set(".ts2 tspan", { x: bx + 10 });
+    q(".ts2 .tn").textContent = "S";
+    q(".ts2 .tv").textContent = "";
+  }
+}
+
+const BEER_STYLE = `
+  .glass { width: 100%; max-height: 460px; display:block; overflow: visible; }
+  .gbody { fill: rgba(255,255,255,.05); }
+  .gedge { fill: none; stroke: rgba(255,255,255,.5); stroke-width: 1.6; }
+  .rim { stroke: rgba(255,255,255,.85); stroke-width: 2.2; stroke-linecap: round; }
+  .gbase { fill: url(#base); stroke: rgba(255,255,255,.25); stroke-width: .8; }
+  .gbase-hl { fill: none; stroke: rgba(255,255,255,.35); stroke-width: 1; }
+  .hl1 { fill: rgba(255,255,255,.17); }
+  .hl2 { fill: rgba(255,255,255,.32); }
+  .hl3 { fill: rgba(255,255,255,.08); }
+  .bub { fill: rgba(255,248,215,.75); stroke: rgba(255,255,255,.55); stroke-width: .35; opacity: 0; }
+  .bub.on { animation: rise var(--d) linear infinite; animation-delay: var(--dl); }
+  @keyframes rise {
+    0% { transform: translate(0, 0); opacity: 0; }
+    6% { opacity: .85; }
+    50% { transform: translate(var(--w), -140px); }
+    100% { transform: translate(0, -280px); opacity: .85; }
+  }
+  .tex { opacity: .5; }
+  .fbubs circle { fill: rgba(255,252,240,.55); stroke: rgba(190,150,80,.55); stroke-width: .5; }
+  .lace { fill: none; stroke: rgba(255,250,235,.55); stroke-width: 1.4; stroke-linecap: round; }
+  .drop ellipse { fill: rgba(255,255,255,.12); stroke: rgba(255,255,255,.22); stroke-width: .4; }
+  .drop .dh { fill: rgba(255,255,255,.7); }
+  .lead { stroke: rgba(255,255,255,.4); stroke-width: 1; stroke-dasharray: 3 3; }
+  .tag { font-size: 11px; fill: var(--secondary-text-color); }
+  .tag .tv { font-size: 13px; font-weight: 700; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+  .tf .tn { fill: #f3e3c0; }
+  .tb .tn { fill: #f5ae22; }
+  .brace { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.3; }
+  .ts2 .tn { font-size: 14px; font-weight: 700; fill: var(--primary-text-color); font-style: italic; }
+  @media (prefers-reduced-motion: reduce) { .bub.on { animation-duration: 0s; } }
+`;
+
 const sized = (size) =>
   class extends EnphasePanelLayoutCard {
     static defaultSize = size;
@@ -3205,6 +3860,10 @@ const CARDS = [
    "Expected vs. produced, yesterday to the day after tomorrow, calibrated on your own panels."],
   ["enphase-grid-card", EnphaseGridCard, "Enphase grid & phases",
    "Voltage gauges per phase (with the 253 V limit), current, power factor, frequency and today's extremes."],
+  ["enphase-power-factor-card", EnphasePowerFactorCard, "Enphase power factor (cos φ)",
+   "The power triangle on the unit circle: P, Q, S and cos φ live, with a trail of the last hours. Grid, per phase or solar."],
+  ["enphase-beer-card", EnphaseBeerCard, "Enphase cos φ beer glass",
+   "cos φ explained with a glass of beer: beer = active power, foam = reactive power, the glass = apparent power. Live bubbles."],
   ["enphase-inverters-card", EnphaseInvertersCard, "Enphase microinverters",
    "Every microinverter in a sortable table: AC, DC, efficiency, temperature, today, health and last report."],
   ["enphase-energy-card", EnphaseEnergyCard, "Enphase production history",

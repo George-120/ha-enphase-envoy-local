@@ -129,6 +129,16 @@ type: custom:enphase-forecast-card
 - Month calendar with the production of every day, months of this year against last year, and
   records (best day, best month, this year, peak today, lifetime), from the long-term statistics
 
+**Power factor card** (`custom:enphase-power-factor-card`)
+- The power triangle on the unit circle, live: P on the x-axis, Q on the y-axis, the vector S, the
+  angle φ and cos φ / sin φ as projections, with a trail of the last hours (`hours: 2`)
+- Grid total, L1/L2/L3 or solar; `scale: unit` (unit circle) or `power` (vector length = S)
+
+**cos φ beer glass** (`custom:enphase-beer-card`)
+- The classic explanation: beer = active power, foam = reactive power, the full glass = apparent
+  power, so cos φ = beer / glass. Beer and foam level follow live, and the bubbles rise faster and
+  thicker with more active power
+
 **For the curious** (extra sensors)
 - Grid voltage, current, power factor, reactive and apparent power per phase; reactive/apparent
   power and power factor of the grid and of the production

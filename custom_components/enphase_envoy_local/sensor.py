@@ -1029,6 +1029,7 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                     "peak_power_today", "peak_power_time", "grid_voltage_max_time", "frequency", "power_factor",
                     "frequency_min_today", "frequency_max_today",
                     "grid_reactive_power", "grid_apparent_power", "phase_imbalance",
+                    "production_reactive_power", "production_apparent_power", "production_power_factor",
                     "inverters_dc_power", "conversion_losses", "fleet_efficiency",
                     "inverter_temperature_avg", "inverter_temperature_max", "oldest_inverter_report",
                     "grid_import_lifetime", "grid_export_lifetime", "consumption_lifetime",
@@ -1037,6 +1038,7 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
         )
         for key in (
             "grid_phase_voltage", "grid_phase_current", "grid_phase_power_factor",
+            "grid_phase_reactive_power", "grid_phase_apparent_power",
             "net_phase_power", "production_phase_power", "consumption_phase_power",
             "production_phase_voltage",
         ):
