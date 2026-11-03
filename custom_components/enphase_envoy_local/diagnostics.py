@@ -52,6 +52,12 @@ async def async_get_config_entry_diagnostics(
         },
         "last_update_success": coordinator.last_update_success,
         "raw": coordinator.data.raw if coordinator.data else None,
+        "daily": {k: v for k, v in coordinator._daily.items() if k not in ("efficiency", "effsum")},
+        "forecast": {
+            "calibration": coordinator.forecast.data.calibration if getattr(coordinator, "forecast", None) else None,
+            "history_source": getattr(getattr(coordinator, "forecast", None), "history_source", None),
+            "error": coordinator.forecast.data.error if getattr(coordinator, "forecast", None) else None,
+        },
         "inverter_count": len(coordinator.data.inverters) if coordinator.data else 0,
         "layout": {
             "source": "enlighten" if coordinator.layout else "phases",

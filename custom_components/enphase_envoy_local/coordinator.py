@@ -632,7 +632,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             if self.data is not None:
                 break
             await asyncio.sleep(2)
-        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.statistics import statistics_during_period
         from homeassistant.helpers import entity_registry as er
 
@@ -646,32 +646,26 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         counters = {name: entity(lifetime_attr) for name, lifetime_attr, _ in DAILY_COUNTERS}
         ids = [i for i in counters.values() if i]
         if ids:
-            states = await get_instance(self.hass).async_add_executor_job(
-                history.get_significant_states,
-                self.hass, midnight, midnight + timedelta(minutes=1), ids, None, True, False, True, True,
+            # The hourly statistics row of 23:00-24:00 holds the counter at midnight.
+            rows_by_id = await get_instance(self.hass).async_add_executor_job(
+                statistics_during_period,
+                self.hass, midnight - timedelta(hours=1), midnight, set(ids), "hour", None, {"state"},
             )
             base = self._daily.setdefault("base", {})
+            lifetimes = {n: la for n, la, _ in DAILY_COUNTERS}
             for name, entity_id in counters.items():
-                rows = states.get(entity_id) if entity_id else None
+                rows = rows_by_id.get(entity_id) if entity_id else None
                 current = self.hass.states.get(entity_id) if entity_id else None
-                if not rows or current is None:
-                    continue
-                first = rows[0]
-                value = first.state if hasattr(first, "state") else first.get("state")
-                changed = getattr(first, "last_changed", None)
-                try:
-                    number = float(value)
-                except (TypeError, ValueError):
-                    continue
-                # Only a state that was already there before midnight is the start value.
-                if changed is not None and changed > midnight + timedelta(minutes=1):
+                if not rows or current is None or rows[-1].get("state") is None:
                     continue
                 scale = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}.get(
                     current.attributes.get("unit_of_measurement"), 1.0
                 )
-                number *= scale
-                lifetime = getattr(self.data, dict((n, la) for n, la, _ in DAILY_COUNTERS)[name], None) if self.data else None
+                number = float(rows[-1]["state"]) * scale
+                lifetime = getattr(self.data, lifetimes[name], None) if self.data else None
                 if lifetime is not None and 0 <= lifetime - number < 500_000:
+                    if abs(base.get(name, -1e12) - number) > 1:
+                        _LOGGER.debug("Start of day for %s from the recorder: %s Wh", name, number)
                     base[name] = number
 
         # Peaks and extremes of today from the 5-minute statistics.
