@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 import logging
 
@@ -103,6 +104,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.daily"
         )
         self._daily: dict = {}
+        self._seeding = False
         self.layout: dict | None = None
         self.layout_status: str | None = None
         self.forecast = None  # SolarForecast, set up in __init__ when enabled
@@ -275,14 +277,16 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         if self.inverter_sensors:
             merge_device_data(data, self._last_device_data)
             merge_inventory(data, self.inverter_details)
-            if data.production_today is None:
+            if data.production_today is None and data.production_lifetime is None:
+                # Only without any lifetime counter: the sum of the microinverters
+                # runs some percent below the production meter (their reports lag
+                # and they count their own AC), so the meter is used when present.
                 today = [
                     i.energy_today
                     for i in data.inverters.values()
                     if i.energy_today is not None
                 ]
                 if today:
-                    # Sum of the microinverters: correct from the first day on.
                     data.production_today = float(sum(today))
         data.network = parse_home(self._last_home)
         data.export_limit_enabled = (
@@ -598,3 +602,113 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             setattr(data, today_attr, round(lifetime - start, 3))
         if changed:
             self._store.async_delay_save(lambda: self._daily, 30)
+        if self._daily.get("seeded") != today and not self._seeding:
+            self._seeding = True
+            self.config_entry.async_create_background_task(
+                self.hass, self._async_seed_today(today), "enphase_envoy_local seed today"
+            )
+
+    async def _async_seed_today(self, today: str) -> None:
+        """Take today's start values and extremes from the recorder.
+
+        After a restart, a reinstall or an update during the day the counters
+        on disk can be missing or wrong; the recorder knows what the lifetime
+        counters read at midnight and what the peaks of today were.
+        """
+        try:
+            await self._async_seed(today)
+        except Exception as err:  # noqa: BLE001 - seeding is a best effort
+            _LOGGER.debug("Could not take today's values from the recorder: %s", err)
+        finally:
+            self._seeding = False
+            if self._daily.get("date") == today:
+                self._daily["seeded"] = today
+                self._store.async_delay_save(lambda: self._daily, 5)
+
+    async def _async_seed(self, today: str) -> None:
+        if "recorder" not in self.hass.config.components:
+            return
+        for _ in range(30):  # the first reading of the gateway must be in
+            if self.data is not None:
+                break
+            await asyncio.sleep(2)
+        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.components.recorder.statistics import statistics_during_period
+        from homeassistant.helpers import entity_registry as er
+
+        registry = er.async_get(self.hass)
+        serial = self.config_entry.data.get(CONF_SERIAL)
+
+        def entity(key: str) -> str | None:
+            return registry.async_get_entity_id("sensor", DOMAIN, f"{serial}_{key}")
+
+        midnight = dt_util.as_utc(dt_util.start_of_local_day())
+        counters = {name: entity(lifetime_attr) for name, lifetime_attr, _ in DAILY_COUNTERS}
+        ids = [i for i in counters.values() if i]
+        if ids:
+            states = await get_instance(self.hass).async_add_executor_job(
+                history.get_significant_states,
+                self.hass, midnight, midnight + timedelta(minutes=1), ids, None, True, False, True, True,
+            )
+            base = self._daily.setdefault("base", {})
+            for name, entity_id in counters.items():
+                rows = states.get(entity_id) if entity_id else None
+                current = self.hass.states.get(entity_id) if entity_id else None
+                if not rows or current is None:
+                    continue
+                first = rows[0]
+                value = first.state if hasattr(first, "state") else first.get("state")
+                changed = getattr(first, "last_changed", None)
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    continue
+                # Only a state that was already there before midnight is the start value.
+                if changed is not None and changed > midnight + timedelta(minutes=1):
+                    continue
+                scale = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}.get(
+                    current.attributes.get("unit_of_measurement"), 1.0
+                )
+                number *= scale
+                lifetime = getattr(self.data, dict((n, la) for n, la, _ in DAILY_COUNTERS)[name], None) if self.data else None
+                if lifetime is not None and 0 <= lifetime - number < 500_000:
+                    base[name] = number
+
+        # Peaks and extremes of today from the 5-minute statistics.
+        keys = {
+            "peak": (entity("production_power"), "max", max),
+            "fmin": (entity("frequency"), "min", min),
+            "fmax": (entity("frequency"), "max", max),
+        }
+        for phase in ("l1", "l2", "l3"):
+            volt = entity(f"grid_phase_voltage_{phase}") or entity(f"production_phase_voltage_{phase}")
+            keys[f"vmax_{phase}"] = (volt, "max", max)
+            keys[f"vmin_{phase}"] = (volt, "min", min)
+        stat_ids = {v[0] for v in keys.values() if v[0]}
+        if not stat_ids:
+            return
+        stats = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period, self.hass, midnight, None, stat_ids, "5minute", None, {"max", "min"}
+        )
+        ext: dict = self._daily.setdefault("ext", {})
+        found: dict[str, list] = {}
+        for key, (entity_id, kind, pick) in keys.items():
+            best = None
+            for row in stats.get(entity_id, []) if entity_id else []:
+                value = row.get(kind)
+                if value is None:
+                    continue
+                if best is None or pick(value, best[0]) == value and value != best[0]:
+                    start = row["start"]
+                    when = dt_util.utc_from_timestamp(start) if isinstance(start, (int, float)) else dt_util.as_utc(start)
+                    best = [round(float(value), 2), (when + timedelta(minutes=2, seconds=30)).isoformat()]
+            if best:
+                found[key.split("_")[0]] = (
+                    best if key.split("_")[0] not in found
+                    else (best if pick(best[0], found[key.split("_")[0]][0]) == best[0] else found[key.split("_")[0]])
+                )
+        better = {"peak": max, "vmax": max, "fmax": max, "vmin": min, "fmin": min}
+        for key, item in found.items():
+            old = ext.get(key)
+            if old is None or better[key](item[0], old[0]) == item[0] and item[0] != old[0]:
+                ext[key] = item

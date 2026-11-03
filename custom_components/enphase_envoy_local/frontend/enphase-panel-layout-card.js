@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.15.0";
+const CARD_VERSION = "1.16.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -31,10 +31,10 @@ const SIZES = {
   full: { height: "calc(100vh - 120px)", columns: "full", cardSize: 14 },
 };
 const SIZE_NAMES = {
-  small: ["Small", "Klein"],
-  medium: ["Medium", "Middel"],
-  large: ["Large", "Groot"],
-  full: ["Full screen", "Volledig scherm"],
+  small: ["Small", "Klein", "Klein"],
+  medium: ["Medium", "Middel", "Mittel"],
+  large: ["Large", "Groot", "Groß"],
+  full: ["Full screen", "Volledig scherm", "Vollbild"],
 };
 
 const T = {
@@ -142,6 +142,58 @@ const T = {
     source_manual: "Zelf getekende indeling",
     save_failed: "Opslaan mislukt",
   },
+  de: {
+    producing: "aktiv",
+    now: "jetzt",
+    today: "heute",
+    power: "Jetzt",
+    today_mode: "Heute",
+    health: "Zustand",
+    temperature: "Temperatur",
+    efficiency: "Wirkungsgrad",
+    replay: "Tag abspielen",
+    live: "Live",
+    no_entity: "Kein Modulanordnungs-Sensor von Enphase Envoy Local gefunden.",
+    source_phases: "Nach Phasen gruppiert (keine Anordnung in Enlighten)",
+    dc: "DC",
+    phase: "Phase",
+    vs_roof: "der guten Module",
+    week: "7 Tage",
+    problem: "braucht Aufmerksamkeit",
+    no_output: "keine Erzeugung",
+    loading: "Verlauf wird geladen…",
+    no_history: "An diesem Tag wurde kein Sonnenschein erfasst",
+    prev_day: "Vorheriger Tag",
+    next_day: "Nächster Tag",
+    pick_day: "Tag auswählen",
+    yesterday: "Gestern",
+    shade: "Verschattung",
+    shade_by_hour: "Verschattung nach Tageszeit",
+    whole_day: "Ganzer Tag",
+    shade_loading: "Die letzten Wochen werden analysiert…",
+    shade_none: "Noch nicht genug Verlauf, um Verschattung zu erkennen (einige Sonnentage nötig).",
+    shade_info: "Anteil dessen, was die guten Module auf derselben Dachfläche in den letzten {days} Tagen erzeugt haben. Niedriger = mehr Verschattung oder ein schwächeres Modul.",
+    shade_worst: "stärkste Verschattung",
+    expected: "Erwartet",
+    no_eff_live: "Noch kein Wirkungsgrad gemessen. Er wird gemessen, solange die Module erzeugen (ab 10 W DC); nach Sonnenuntergang bleibt der letzte Wert des Tages sichtbar.",
+    no_eff_yet: "Zu dieser Tageszeit wurde noch kein Wirkungsgrad erfasst.",
+    no_eff_day: "An diesem Tag wurde kein Wirkungsgrad erfasst. Er wird ab der Einrichtung der Integration gespeichert, frühere Tage zeigen daher nur Leistung, Energie und Zustand.",
+    no_data_day: "Für diese Ansicht wurde an diesem Tag nichts erfasst.",
+    no_data_yet: "Noch keine Daten für diese Ansicht.",
+    data_since: "Zu diesem Zeitpunkt wurden noch keine Werte erfasst ({what}). Die Erfassung läuft seit {time}; drücke Live für die aktuellen Werte.",
+    edit_short: "Anordnung",
+    edit: "Module anordnen",
+    save: "Speichern",
+    cancel: "Abbrechen",
+    auto: "Automatische Anordnung",
+    rotate: "Drehen",
+    roof: "Dachfläche",
+    new_roof: "+ Neue Dachfläche",
+    roof_name: "Name dieser Dachfläche",
+    edit_hint: "Ziehe die Module an ihren Platz. Klicke auf ein Modul, um es zu drehen oder einer anderen Dachfläche zuzuordnen.",
+    source_manual: "Von Hand gezeichnete Anordnung",
+    save_failed: "Speichern fehlgeschlagen",
+  },
 };
 
 const ICONS = {
@@ -160,10 +212,10 @@ const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max)/i;
 // Size presets of the extra cards: width in a Sections dashboard and how
 // much detail is shown, so the content always fits.
 const CARD_SIZES = {
-  small: { columns: 6, en: "Small", nl: "Klein" },
-  medium: { columns: 12, en: "Medium", nl: "Middel" },
-  large: { columns: 12, en: "Large", nl: "Groot" },
-  full: { columns: "full", en: "Full width", nl: "Volledige breedte" },
+  small: { columns: 6, en: "Small", nl: "Klein", de: "Klein" },
+  medium: { columns: 12, en: "Medium", nl: "Middel", de: "Mittel" },
+  large: { columns: 12, en: "Large", nl: "Groot", de: "Groß" },
+  full: { columns: "full", en: "Full width", nl: "Volledige breedte", de: "Volle Breite" },
 };
 const SIZE_FIELD = {
   name: "size",
@@ -1521,6 +1573,13 @@ const ST = {
     attention: "Aandacht nodig", cloud: "Enlighten", online: "verbonden", offline: "geen verbinding",
     token: "Token geldig tot", total: "Totaal opgewekt", none: "alles in orde",
   },
+  de: {
+    solar: "Solar", home: "Haus", grid: "Netz", import: "aus dem Netz", export: "ins Netz",
+    today: "Heute", produced: "Erzeugt", used: "Verbraucht", imported: "Bezogen", exported: "Eingespeist",
+    selfuse: "Eigenverbrauch", sufficient: "Autarkie", panels: "Module aktiv",
+    attention: "Brauchen Aufmerksamkeit", cloud: "Enlighten", online: "verbunden", offline: "keine Verbindung",
+    token: "Token gültig bis", total: "Gesamt erzeugt", none: "alles in Ordnung",
+  },
 };
 
 function fmtPower(w) {
@@ -1965,6 +2024,14 @@ const FT = {
     peak: "Piek", now: "nu", source: "Weer: Open-Meteo",
     compass: "N,NNO,NO,ONO,O,OZO,ZO,ZZO,Z,ZZW,ZW,WZW,W,WNW,NW,NNW", learned: "geleerd van je panelen", assumed: "aangenomen", roof: "Dak",
   },
+  de: {
+    title: "Solarprognose", yesterday: "Gestern", today: "Heute", tomorrow: "Morgen", day_after: "Übermorgen",
+    expected: "Erwartet", actual: "Erzeugt", of_expected: "der Prognose", so_far: "bisher erwartet",
+    no_forecast: "Noch keine Prognose. Aktiviere 'Solarprognose' in den Optionen von Enphase Envoy Local (standardmäßig aktiv) und warte eine Minute.",
+    calibrated: "Kalibriert anhand von {n} sonnigen Tagen deiner eigenen Anlage", not_calibrated: "Noch nicht kalibriert: wird nach dem ersten sonnigen Tag genau",
+    peak: "Spitze", now: "jetzt", source: "Wetter: Open-Meteo",
+    compass: "N,NNO,NO,ONO,O,OSO,SO,SSO,S,SSW,SW,WSW,W,WNW,NW,NNW", learned: "von deinen Modulen gelernt", assumed: "angenommen", roof: "Dach",
+  },
 };
 
 class EnphaseForecastCard extends HTMLElement {
@@ -2374,6 +2441,20 @@ const XT = {
     best_month: "Beste maand", this_year: "Dit jaar", last_year: "Vorig jaar", avg_day: "Gemiddeld per dag",
     peak_today: "Piek vandaag", lifetime: "Totaal ooit", days_with_sun: "dagen", no_stats: "Nog geen statistieken.",
     vs_last_year: "t.o.v. vorig jaar", kwh: "kWh",
+  },
+  de: {
+    grid: "Netz & Phasen", frequency: "Frequenz", imbalance: "Schieflast", current: "Strom", pf: "Leistungsfaktor",
+    production: "Erzeugung", importing: "aus dem Netz", exporting: "ins Netz", highest: "Höchstwert heute",
+    lowest: "Tiefstwert heute", above: "Über 250 V", reactive: "Blind", apparent: "Schein", at: "um",
+    no_grid: "Kein Netzzähler gefunden (Verbrauchs-Stromwandler erforderlich).", minutes: "Min.",
+    inverters: "Mikrowechselrichter", panel: "Modul", roof: "Dach", phase: "Phase", ac: "AC", dc: "DC",
+    eff: "Wirkgr.", temp: "Temp.", today: "Heute", health: "Zustand", report: "Meldung", ago: "her",
+    dc_total: "DC ein", ac_total: "AC aus", losses: "Verluste", fleet: "Wirkungsgrad", tavg: "Temp. Ø", tmax: "Temp. max.",
+    oldest: "Älteste Meldung", now: "jetzt", total: "Gesamt",
+    energy: "Erzeugung", month: "Monat", year: "Jahr", records: "Rekorde", best_day: "Bester Tag",
+    best_month: "Bester Monat", this_year: "Dieses Jahr", last_year: "Letztes Jahr", avg_day: "Durchschnitt pro Tag",
+    peak_today: "Spitze heute", lifetime: "Gesamt seit Beginn", days_with_sun: "Tage", no_stats: "Noch keine Statistiken.",
+    vs_last_year: "ggü. Vorjahr", kwh: "kWh",
   },
 };
 
@@ -2853,13 +2934,66 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
       const best = ids.reduce((b, id) => ((stats[id] || []).length > (stats[b] || []).length ? id : b), ids[0]);
       const k = { Wh: 0.001, kWh: 1, MWh: 1000 }[unit[best]] ?? 1;
       const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
+      const key = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      // Lifetime counters sometimes jump (a gateway glitch, a replaced meter,
+      // the core integration re-adding the counter): such a day can read
+      // thousands of kWh, or a negative value. Those days are rebuilt from the
+      // hourly statistics, leaving out the faulty hours.
+      const kwp = ((layout.attributes.arrays || []).flatMap((a) => a.modules || []).reduce((t, m) => t + (m.max || 0), 0) / 1000) || null;
+      const lat = ((hass.config?.latitude ?? 52) * Math.PI) / 180;
+      const dayHours = (d) => {
+        const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+        const decl = ((23.44 * Math.PI) / 180) * Math.sin((2 * Math.PI * (284 + n)) / 365);
+        return (2 * Math.acos(Math.max(-1, Math.min(1, -Math.tan(lat) * Math.tan(decl)))) * 180) / Math.PI / 15;
+      };
+      const raw = (stats[best] || []).filter((r) => r.change != null).map((r) => [new Date(toMs(r.start)), r.change * k]);
+      const ok = raw.map(([, v]) => v).filter((v) => v > 0).sort((x, y) => x - y);
+      const p95 = ok.length ? ok[Math.floor(ok.length * 0.95)] : 50;
+      const peak = kwp || p95 / 6;
+      const dayCap = (d) => Math.max(peak * dayHours(d) * 0.85, 2);
+      const hourCap = peak * 1.25;
       const days = {};
-      for (const r of stats[best] || []) {
-        if (r.change == null) continue;
-        const d = new Date(toMs(r.start));
-        days[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`] = Math.max(0, r.change * k);
+      const suspect = [];
+      raw.forEach(([d, v], i) => {
+        const near = raw.slice(Math.max(0, i - 5), i + 6).filter((_, j) => j !== Math.min(i, 5)).map(([, x]) => x).filter((x) => x >= 0 && x <= dayCap(d));
+        const neighbour = near.length >= 3 ? Math.max(...near) : null;
+        if (v < 0 || v > dayCap(d) || (neighbour != null && v > 5 && v > neighbour * 2.2)) suspect.push(d);
+        else days[key(d)] = v;
+      });
+      await Promise.all(suspect.slice(-60).map(async (d) => {
+        try {
+          const end = new Date(d.getTime() + 86400000);
+          const rows = (await hass.callWS({
+            type: "recorder/statistics_during_period", start_time: d.toISOString(), end_time: end.toISOString(),
+            statistic_ids: [best], period: "hour", types: ["change"],
+          }))[best] || [];
+          const vals = rows.map((r) => (r.change == null ? null : r.change * k));
+          const good = (v) => v != null && v >= 0 && v <= hourCap;
+          let total = 0;
+          vals.forEach((v, i) => {
+            if (good(v)) total += v;
+            else {
+              // A faulty hour gets the mean of the hours around it.
+              const around = [vals[i - 1], vals[i + 1]].filter(good);
+              total += around.length ? around.reduce((t, x) => t + x, 0) / around.length : 0;
+            }
+          });
+          if (rows.length >= 20 && total <= dayCap(d)) days[key(d)] = total;
+        } catch (e) {
+          /* leave the day out */
+        }
+      }));
+      // Our own production meter counts best: it wins on every full day it has.
+      if (own && own !== best && stats[own]) {
+        const ku = { Wh: 0.001, kWh: 1, MWh: 1000 }[unit[own]] ?? 1;
+        stats[own].slice(1).forEach((r) => {
+          const d = new Date(toMs(r.start));
+          const v = r.change * ku;
+          if (r.change != null && v >= 0 && v <= dayCap(d)) days[key(d)] = v;
+        });
       }
       this._days = days;
+      this._repaired = suspect.length;
       this._source = best;
     } catch (err) {
       this._days = {};
@@ -3216,6 +3350,15 @@ const PF_T = {
     importing: "afname", exporting: "teruglevering", nopower: "Te weinig vermogen om cos φ te bepalen",
     noq: "Blindvermogen van deze fase staat uit: richting afgeleid van het nettotaal",
     trail: "laatste", hours: "u", good: "goed", fair: "matig", poor: "laag",
+  },
+  de: {
+    title: "Leistungsfaktor", grid: "Netz", production: "Solar", unit: "Einheitskreis", power: "Maßstabsgetreu",
+    active: "Wirk", reactive: "Blind", apparent: "Schein", angle: "Phasenwinkel",
+    inductive: "induktiv (nacheilend)", capacitive: "kapazitiv (voreilend)", resistive: "ohmsch",
+    importing: "Bezug", exporting: "Einspeisung", nopower: "Zu wenig Leistung, um cos φ zu bestimmen",
+    noq: "Blindleistung dieser Phase ist deaktiviert: Richtung aus der Netzsumme abgeleitet",
+    trail: "letzte", hours: "h", good: "gut", fair: "mäßig", poor: "niedrig",
+    source: "Quelle", scale: "Maßstab", hoursl: "Spur (Stunden, 0 = aus)",
   },
 };
 
@@ -3605,6 +3748,7 @@ const PF_STYLE = `
 const BEER_T = {
   en: { title: "cos φ in a glass of beer", beer: "Beer · P", foam: "Foam · Q", glass: "Glass · S" },
   nl: { title: "cos φ in een glas bier", beer: "Bier · P", foam: "Schuim · Q", glass: "Glas · S" },
+  de: { title: "cos φ im Bierglas", beer: "Bier · P", foam: "Schaum · Q", glass: "Glas · S" },
 };
 const B_TOP = 24, B_FLOOR = 292, B_H = B_FLOOR - B_TOP;
 const bLeft = (y) => 34 + ((y - 20) * 20) / 272;

@@ -33,7 +33,7 @@ def _weather(days: int) -> fc.Weather:
 
 
 def test_fit_orientation_finds_an_east_roof():
-    weather = _weather(5)
+    weather = _weather(25)
     sun = {end: fc.sun_position(end - timedelta(minutes=30), LAT, LON) for end in weather.ghi}
     production = {
         end: 2.0 * fc.plane_irradiance(weather.ghi[end], weather.dni[end], weather.dhi[end], *sun[end], 40, 90)
@@ -43,3 +43,42 @@ def test_fit_orientation_finds_an_east_roof():
     assert azimuth == pytest.approx(90, abs=15)
     assert tilt == pytest.approx(40, abs=10)
     assert error < 0.05
+
+
+def test_weather_averages_several_models():
+    raw = {
+        "hourly": {
+            "time": ["2026-06-01T12:00", "2026-06-01T13:00"],
+            "shortwave_radiation_dwd_icon_seamless": [600, None],
+            "shortwave_radiation_ecmwf_ifs025": [400, 300],
+            "direct_normal_irradiance_dwd_icon_seamless": [500, 100],
+            "direct_normal_irradiance_ecmwf_ifs025": [300, 100],
+            "diffuse_radiation_dwd_icon_seamless": [100, 80],
+            "diffuse_radiation_ecmwf_ifs025": [140, 80],
+        }
+    }
+    weather = fc._weather_from(raw)
+    first, second = sorted(weather.ghi)
+    assert weather.ghi[first] == 500
+    assert weather.ghi[second] == 300  # a missing model is skipped, not counted as 0
+    assert weather.dni[first] == 400
+    assert weather.dhi[first] == 120
+
+
+def test_factor_skips_snow_days_and_learns_shade():
+    weather = _weather(30)
+    sun = {end: fc.sun_position(end - timedelta(minutes=30), LAT, LON) for end in weather.ghi}
+    plane = fc.plane_series(weather, LAT, LON, 35, 180, sun)
+    production = {}
+    snow_day = None
+    for end, value in plane.items():
+        day = end.date()
+        snow_day = snow_day or day
+        shaded = sun[end][1] > 240  # a tree in the west
+        production[end] = 0.0 if day == snow_day else value * 3.0 * (0.5 if shaded else 1.0)
+    factor, days, shade = fc.learn_factor_and_shade(production, plane, sun)
+    assert days == 29  # the snow day is left out
+    west = [v for k, v in shade.items() if int(k.split("_")[0]) * fc.SHADE_AZ >= 255]
+    south = shade.get(fc.shade_cell(55, 180), 1.0)
+    assert west and max(west) < 0.8
+    assert south > 0.95

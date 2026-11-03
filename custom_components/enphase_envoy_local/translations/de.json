@@ -1,0 +1,444 @@
+{
+  "config": {
+    "flow_title": "Envoy {serial}",
+    "step": {
+      "user": {
+        "title": "Enphase IQ Gateway",
+        "description": "Das Gateway wird direkt in deinem eigenen Netzwerk ausgelesen; für die Messwerte wird keine Cloud verwendet.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des IQ Gateways, z. B. 192.168.1.50"
+        }
+      },
+      "auth": {
+        "title": "Anmeldung für Gateway {serial}",
+        "description": "Firmware {firmware} benötigt ein Token. Gib deine Enlighten-E-Mail-Adresse und dein Passwort ein (das Token wird dann automatisch abgerufen und erneuert) oder füge ein Token von entrez.enphaseenergy.com ein.",
+        "data": {
+          "username": "Enlighten-E-Mail-Adresse",
+          "password": "Enlighten-Passwort",
+          "token": "Token (optional, statt E-Mail/Passwort)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut anmelden",
+        "description": "Das Token für Gateway {serial} funktioniert nicht mehr. Gib deine Enlighten-E-Mail-Adresse und dein Passwort oder ein neues Token ein.",
+        "data": {
+          "username": "Enlighten-E-Mail-Adresse",
+          "password": "Enlighten-Passwort",
+          "token": "Token (optional, statt E-Mail/Passwort)"
+        }
+      },
+      "reconfigure": {
+        "title": "Adresse ändern",
+        "data": {
+          "host": "Host",
+          "username": "Enlighten-E-Mail-Adresse",
+          "password": "Enlighten-Passwort"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des IQ Gateways, z. B. 192.168.1.50",
+          "username": "Optional: Ausfüllen, wenn du bisher ein Token verwendet hast. Erforderlich für die automatische Token-Erneuerung und für die Modulanordnung aus Enlighten.",
+          "password": "Leer lassen, um das aktuelle Passwort beizubehalten."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Das Gateway ist unter dieser Adresse nicht erreichbar.",
+      "not_an_envoy": "Unter dieser Adresse antwortet kein Enphase IQ Gateway.",
+      "no_credentials": "Gib eine E-Mail-Adresse und ein Passwort oder ein Token ein.",
+      "invalid_auth": "Enlighten hat die E-Mail-Adresse oder das Passwort abgelehnt.",
+      "mfa_enabled": "Dieses Enlighten-Konto verwendet die Zwei-Faktor-Authentifizierung. Füge stattdessen ein Token ein.",
+      "not_owner": "Enphase hat für dieses Gateway kein Token ausgestellt. Ist es mit diesem Enlighten-Konto verknüpft?",
+      "enlighten_unavailable": "Enlighten ist gerade nicht erreichbar. Versuche es später erneut oder füge ein Token ein.",
+      "invalid_token": "Dies ist kein gültiges Token.",
+      "token_rejected": "Das Gateway hat das Token abgelehnt.",
+      "unknown": "Unerwarteter Fehler, siehe Protokoll."
+    },
+    "abort": {
+      "already_configured": "Dieses Gateway ist bereits eingerichtet.",
+      "reauth_successful": "Erneut angemeldet.",
+      "reconfigure_successful": "Adresse geändert.",
+      "wrong_device": "Diese Adresse gehört zu einem anderen Gateway.",
+      "not_ipv4_address": "Es werden nur IPv4-Adressen unterstützt.",
+      "cannot_connect": "Das Gateway ist nicht erreichbar."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Optionen",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall",
+          "inverter_sensors": "Sensoren pro Mikrowechselrichter",
+          "underperform_threshold": "Minderleistungswarnung unter",
+          "forecast": "Solarprognose (Open-Meteo)"
+        },
+        "data_description": {
+          "scan_interval": "Sekunden zwischen den Abfragen (5–300).",
+          "inverter_sensors": "Mikrowechselrichter melden sich etwa alle 5 Minuten.",
+          "underperform_threshold": "Ein Modul wird markiert, wenn es weniger als diesen Prozentsatz dessen erzeugt, was die guten Module auf derselben Dachfläche erzeugen (100 % = so gut wie die besten Module).",
+          "forecast": "Erwartete Erzeugung pro Dachfläche auf Basis der Wettervorhersage von Open-Meteo (kostenlos, ohne Konto; der Standort von Home Assistant wird übermittelt). Wird automatisch anhand der tatsächlichen Erzeugung deiner Module kalibriert."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "production_power": {
+        "name": "Erzeugung"
+      },
+      "production_today": {
+        "name": "Erzeugung heute"
+      },
+      "production_7days": {
+        "name": "Erzeugung letzte 7 Tage"
+      },
+      "production_lifetime": {
+        "name": "Erzeugung gesamt"
+      },
+      "active_inverters": {
+        "name": "Aktive Mikrowechselrichter"
+      },
+      "consumption_power": {
+        "name": "Verbrauch"
+      },
+      "consumption_today": {
+        "name": "Verbrauch heute"
+      },
+      "consumption_lifetime": {
+        "name": "Verbrauch gesamt"
+      },
+      "net_power": {
+        "name": "Netzleistung"
+      },
+      "last_reading": {
+        "name": "Letzte Abfrage"
+      },
+      "token_expires": {
+        "name": "Token läuft ab"
+      },
+      "production_phase_power": {
+        "name": "Erzeugung {phase}"
+      },
+      "production_phase_voltage": {
+        "name": "Spannung {phase}"
+      },
+      "production_phase_current": {
+        "name": "Strom {phase}"
+      },
+      "production_phase_lifetime": {
+        "name": "Erzeugung gesamt {phase}"
+      },
+      "consumption_phase_power": {
+        "name": "Verbrauch {phase}"
+      },
+      "net_phase_power": {
+        "name": "Netzleistung {phase}"
+      },
+      "inverter_power": {
+        "name": "Leistung"
+      },
+      "inverter_last_report": {
+        "name": "Letzte Meldung"
+      },
+      "grid_import_today": {
+        "name": "Netzbezug heute"
+      },
+      "grid_export_today": {
+        "name": "Einspeisung heute"
+      },
+      "grid_import_lifetime": {
+        "name": "Netzbezug gesamt"
+      },
+      "grid_export_lifetime": {
+        "name": "Einspeisung gesamt"
+      },
+      "self_consumption_today": {
+        "name": "Eigenverbrauch heute"
+      },
+      "self_sufficiency_today": {
+        "name": "Autarkie heute"
+      },
+      "frequency": {
+        "name": "Netzfrequenz"
+      },
+      "power_factor": {
+        "name": "Leistungsfaktor"
+      },
+      "consumption_phase_current": {
+        "name": "Verbrauchsstrom {phase}"
+      },
+      "inverter_max_power": {
+        "name": "Maximale Leistung"
+      },
+      "inverter_dc_power": {
+        "name": "DC-Leistung"
+      },
+      "inverter_efficiency": {
+        "name": "Wirkungsgrad"
+      },
+      "inverter_dc_voltage": {
+        "name": "DC-Spannung"
+      },
+      "inverter_dc_current": {
+        "name": "DC-Strom"
+      },
+      "inverter_ac_voltage": {
+        "name": "AC-Spannung"
+      },
+      "inverter_ac_current": {
+        "name": "AC-Strom"
+      },
+      "inverter_ac_frequency": {
+        "name": "AC-Frequenz"
+      },
+      "inverter_temperature": {
+        "name": "Temperatur"
+      },
+      "inverter_energy_today": {
+        "name": "Erzeugung heute"
+      },
+      "inverter_energy_yesterday": {
+        "name": "Erzeugung gestern"
+      },
+      "inverter_energy_week": {
+        "name": "Erzeugung diese Woche"
+      },
+      "inverter_energy_lifetime": {
+        "name": "Erzeugung gesamt"
+      },
+      "inverter_phase": {
+        "name": "Phase"
+      },
+      "inverter_firmware": {
+        "name": "Firmware"
+      },
+      "inverter_signal": {
+        "name": "Signalstärke"
+      },
+      "last_cloud_report": {
+        "name": "Letzte Meldung an Enlighten"
+      },
+      "wifi_signal": {
+        "name": "WLAN-Signal"
+      },
+      "network_interface": {
+        "name": "Netzwerkverbindung",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "WLAN",
+          "cellular": "Mobilfunk",
+          "eth0": "Ethernet",
+          "wlan0": "WLAN"
+        }
+      },
+      "panel_layout": {
+        "name": "Modulanordnung",
+        "unit_of_measurement": "Module"
+      },
+      "inverter_performance": {
+        "name": "Leistung im Dachvergleich"
+      },
+      "inverter_performance_week": {
+        "name": "Leistung im Dachvergleich (7 Tage)"
+      },
+      "forecast_today": {
+        "name": "Prognose heute"
+      },
+      "forecast_tomorrow": {
+        "name": "Prognose morgen"
+      },
+      "forecast_day_after": {
+        "name": "Prognose übermorgen"
+      },
+      "forecast_remaining_today": {
+        "name": "Prognose Rest des Tages"
+      },
+      "forecast_power_now": {
+        "name": "Prognostizierte Leistung jetzt"
+      },
+      "forecast_performance": {
+        "name": "Erzeugung im Vergleich zur Prognose"
+      },
+      "grid_voltage_max_today": {
+        "name": "Höchste Netzspannung heute"
+      },
+      "grid_voltage_min_today": {
+        "name": "Niedrigste Netzspannung heute"
+      },
+      "grid_voltage_max_time": {
+        "name": "Höchste Netzspannung um"
+      },
+      "minutes_above_250v_today": {
+        "name": "Zeit über 250 V heute"
+      },
+      "peak_power_today": {
+        "name": "Spitzenerzeugung heute"
+      },
+      "peak_power_time": {
+        "name": "Spitzenerzeugung um"
+      },
+      "frequency_min_today": {
+        "name": "Niedrigste Netzfrequenz heute"
+      },
+      "frequency_max_today": {
+        "name": "Höchste Netzfrequenz heute"
+      },
+      "grid_reactive_power": {
+        "name": "Blindleistung Netz"
+      },
+      "grid_apparent_power": {
+        "name": "Scheinleistung Netz"
+      },
+      "production_reactive_power": {
+        "name": "Blindleistung Erzeugung"
+      },
+      "production_apparent_power": {
+        "name": "Scheinleistung Erzeugung"
+      },
+      "production_power_factor": {
+        "name": "Leistungsfaktor Erzeugung"
+      },
+      "phase_imbalance": {
+        "name": "Phasenschieflast"
+      },
+      "inverters_dc_power": {
+        "name": "DC-Leistung aller Module"
+      },
+      "conversion_losses": {
+        "name": "Umwandlungsverluste"
+      },
+      "fleet_efficiency": {
+        "name": "Wirkungsgrad der Mikrowechselrichter"
+      },
+      "inverter_temperature_avg": {
+        "name": "Mikrowechselrichter-Temperatur Durchschnitt"
+      },
+      "inverter_temperature_max": {
+        "name": "Mikrowechselrichter-Temperatur Maximum"
+      },
+      "oldest_inverter_report": {
+        "name": "Älteste Mikrowechselrichter-Meldung"
+      },
+      "response_time": {
+        "name": "Antwortzeit des Gateways"
+      },
+      "grid_phase_voltage": {
+        "name": "Netzspannung {phase}"
+      },
+      "grid_phase_current": {
+        "name": "Netzstrom {phase}"
+      },
+      "grid_phase_power_factor": {
+        "name": "Leistungsfaktor Netz {phase}"
+      },
+      "grid_phase_reactive_power": {
+        "name": "Blindleistung Netz {phase}"
+      },
+      "grid_phase_apparent_power": {
+        "name": "Scheinleistung Netz {phase}"
+      }
+    },
+    "binary_sensor": {
+      "cloud_connected": {
+        "name": "Verbindung zu Enlighten"
+      },
+      "export_limit": {
+        "name": "Einspeisebegrenzung aktiv"
+      },
+      "production_stopped": {
+        "name": "Erzeugung gestoppt"
+      },
+      "inverter_producing": {
+        "name": "Erzeugt"
+      },
+      "inverter_communicating": {
+        "name": "Kommuniziert"
+      },
+      "inverter_underperforming": {
+        "name": "Minderleistung"
+      },
+      "inverter_no_output": {
+        "name": "Keine Erzeugung"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Jetzt aktualisieren"
+      },
+      "renew_token": {
+        "name": "Token erneuern"
+      },
+      "refresh_layout": {
+        "name": "Modulanordnung abrufen"
+      }
+    },
+    "switch": {
+      "production": {
+        "name": "Erzeugung"
+      }
+    }
+  },
+  "exceptions": {
+    "needs_installer": {
+      "message": "Das Gateway erlaubt dies nur mit einem Installateur-Token."
+    },
+    "no_credentials": {
+      "message": "Es ist keine Enlighten-E-Mail-Adresse bzw. kein Passwort hinterlegt; melde dich erneut an, um sie hinzuzufügen."
+    },
+    "command_failed": {
+      "message": "Das Gateway hat den Befehl nicht angenommen: {error}"
+    },
+    "no_layout": {
+      "message": "Enlighten hat keine Modulanordnung für diese Anlage."
+    },
+    "empty_layout": {
+      "message": "Die Anordnung enthält keine bekannten Module."
+    },
+    "unknown_gateway": {
+      "message": "Kein geladenes Gateway mit der Seriennummer {serial}."
+    }
+  },
+  "issues": {
+    "inverter_underperforming": {
+      "title": "Modul {serial} erzeugt weniger als seine Nachbarn",
+      "description": "Mikrowechselrichter {serial} ({where}) hat {performance}% dessen erzeugt, was die guten Module auf derselben Dachfläche erzeugen. Prüfe auf Verschattung, Verschmutzung oder Beschädigung. Dieser Hinweis verschwindet von selbst, sobald sich das Modul erholt."
+    },
+    "inverter_no_output": {
+      "title": "Modul {serial} erzeugt nichts",
+      "description": "Mikrowechselrichter {serial} ({where}) liefert seit mehr als 30 Minuten keine Leistung, während die anderen Module auf derselben Dachfläche erzeugen. Prüfe den Wechselrichter, seinen Steckverbinder und das Modul."
+    },
+    "cloud_offline": {
+      "title": "Gateway {serial} hat keine Verbindung zu Enlighten",
+      "description": "Das Gateway hat sich seit mehr als 6 Stunden nicht bei Enlighten gemeldet. Das lokale Auslesen funktioniert weiterhin, Enlighten und Firmware-Updates jedoch nicht. Prüfe die Netzwerkverbindung."
+    }
+  },
+  "services": {
+    "set_panel_layout": {
+      "name": "Modulanordnung speichern",
+      "description": "Speichert eine von Hand gezeichnete Modulanordnung (wird von der Modulanordnungskarte verwendet; hat Vorrang vor Enlighten).",
+      "fields": {
+        "serial": {
+          "name": "Seriennummer des Gateways",
+          "description": "Seriennummer des IQ Gateways."
+        },
+        "arrays": {
+          "name": "Dachflächen",
+          "description": "Liste der Dachflächen mit Bezeichnung und Modulen (serial, x, y, w, h)."
+        }
+      }
+    },
+    "reset_panel_layout": {
+      "name": "Modulanordnung zurücksetzen",
+      "description": "Verwirft die gezeichnete Anordnung und verwendet wieder Enlighten oder die Gruppierung nach Phasen.",
+      "fields": {
+        "serial": {
+          "name": "Seriennummer des Gateways",
+          "description": "Seriennummer des IQ Gateways."
+        }
+      }
+    }
+  }
+}
