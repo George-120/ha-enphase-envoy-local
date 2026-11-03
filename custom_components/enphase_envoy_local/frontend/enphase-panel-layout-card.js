@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.13.0";
+const CARD_VERSION = "1.14.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -156,6 +156,33 @@ const ICONS = {
 
 // Other W sensors of a microinverter that are not its AC power.
 const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max)/i;
+
+// Size presets of the extra cards: width in a Sections dashboard and how
+// much detail is shown, so the content always fits.
+const CARD_SIZES = {
+  small: { columns: 6, en: "Small", nl: "Klein" },
+  medium: { columns: 12, en: "Medium", nl: "Middel" },
+  large: { columns: 12, en: "Large", nl: "Groot" },
+  full: { columns: "full", en: "Full width", nl: "Volledige breedte" },
+};
+const SIZE_FIELD = {
+  name: "size",
+  selector: {
+    select: {
+      mode: "dropdown",
+      options: Object.entries(CARD_SIZES).map(([value, s]) => ({ value, label: `${s.en} / ${s.nl}` })),
+    },
+  },
+};
+
+function applySize(el, config) {
+  el.setAttribute("size", CARD_SIZES[config?.size] ? config.size : "medium");
+}
+
+function sizeGrid(config) {
+  const size = CARD_SIZES[config?.size] || CARD_SIZES.medium;
+  return { columns: size.columns, min_columns: 6, rows: "auto" };
+}
 
 // Fixed card height chosen in the editor (px); empty = as high as the content.
 function applyHeight(el, config) {
@@ -1512,6 +1539,7 @@ class EnphaseSystemCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
     applyHeight(this, this._config);
+    applySize(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
   }
@@ -1525,8 +1553,8 @@ class EnphaseSystemCard extends HTMLElement {
       schema: [
         { name: "title", selector: { text: {} } },
         { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
-      , { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      , SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -1535,7 +1563,7 @@ class EnphaseSystemCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return sizeGrid(this._config);
   }
 
   _t(key) {
@@ -1560,7 +1588,7 @@ class EnphaseSystemCard extends HTMLElement {
   _build() {
     const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
     this.shadowRoot.innerHTML = `
-      <style>${SYSTEM_STYLE}${GLASS}</style>
+      <style>${SYSTEM_STYLE}${SIZE_STYLE}${GLASS}</style>
       <ha-card>
         ${title}
         <div class="flow">
@@ -1943,6 +1971,7 @@ class EnphaseForecastCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
     applyHeight(this, this._config);
+    applySize(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._day = 0; // -1 yesterday, 0 today, 1 tomorrow, 2 day after
     this._built = false;
@@ -1955,8 +1984,8 @@ class EnphaseForecastCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -1965,7 +1994,7 @@ class EnphaseForecastCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return sizeGrid(this._config);
   }
 
   _t(key) {
@@ -2000,7 +2029,7 @@ class EnphaseForecastCard extends HTMLElement {
     const days = [-1, 0, 1, 2];
     const names = { "-1": "yesterday", 0: "today", 1: "tomorrow", 2: "day_after" };
     this.shadowRoot.innerHTML = `
-      <style>${FORECAST_STYLE}${GLASS}</style>
+      <style>${FORECAST_STYLE}${SIZE_STYLE}${GLASS}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("title"))}</div>
@@ -2352,6 +2381,7 @@ class EnphaseBaseCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
     applyHeight(this, this._config);
+    applySize(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
   }
@@ -2362,13 +2392,13 @@ class EnphaseBaseCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return sizeGrid(this._config);
   }
 
   _t(key) {
@@ -2456,7 +2486,7 @@ class EnphaseGridCard extends EnphaseBaseCard {
         </div>
       </div>`;
     this.shadowRoot.innerHTML = `
-      <style>${XSTYLE}${GRID_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${GRID_STYLE}${GLASS}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("grid"))}</div>
@@ -2598,7 +2628,7 @@ class EnphaseInvertersCard extends EnphaseBaseCard {
     const label = { panel: "panel", phase: "phase", ac: "ac", dc: "dc", dcv: "dc", eff: "eff", temp: "temp", today: "today", health: "health", report: "report" };
     const units = { ac: "W", dc: "W", dcv: "V · A", eff: "%", temp: "°C", today: "kWh", health: "%", report: "" };
     this.shadowRoot.innerHTML = `
-      <style>${XSTYLE}${INV_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${INV_STYLE}${GLASS}</style>
       <ha-card>
         <div class="top"><div class="title">${esc(this._config.title || this._t("inverters"))}</div><span class="count"></span></div>
         <div class="sum">
@@ -2760,7 +2790,7 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
     const now = new Date();
     this._month = this._month || new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     this.shadowRoot.innerHTML = `
-      <style>${XSTYLE}${ENERGY_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${ENERGY_STYLE}${GLASS}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("energy"))}</div>
@@ -2885,8 +2915,9 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
       const d = new Date(first.getFullYear(), first.getMonth(), i + 1);
       const future = d > today;
       const level = v == null ? 0 : Math.max(0.08, v / max);
-      cells.push(`<span class="cell ${future ? "future" : ""} ${d.getTime() === today.getTime() ? "today" : ""}" style="--l:${level.toFixed(3)}" title="${esc(d.toLocaleDateString(loc, { weekday: "long", day: "numeric", month: "long" }))}: ${fmt(v, 1)} kWh">
-        <i>${i + 1}</i><b>${v == null || future ? "" : fmt(v, v < 10 ? 1 : 0)}</b></span>`);
+      const has = v != null && !future;
+      cells.push(`<span class="cell ${future ? "future" : ""} ${has ? "has" : ""} ${d.getTime() === today.getTime() ? "today" : ""}" style="--l:${(has ? level : 0).toFixed(3)}" title="${esc(d.toLocaleDateString(loc, { weekday: "long", day: "numeric", month: "long" }))}: ${fmt(v, 1)} kWh">
+        <span class="fill"></span><i>${i + 1}</i><b>${has ? fmt(v, v < 10 ? 1 : 0) : ""}</b></span>`);
     });
     const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
     const diff = lastYear > 0 ? Math.round((sameDays / lastYear - 1) * 100) : null;
@@ -2995,15 +3026,23 @@ const ENERGY_STYLE = `
   .figs b.down { color: #ef5350; }
   .cal { display:grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; container-type: inline-size; }
   .cal .wd { text-align:center; font-size:.68rem; text-transform: uppercase; color: var(--secondary-text-color); }
-  .cell { position: relative; aspect-ratio: 1.45; border-radius: 12px; padding: 4px 6px; display:flex; flex-direction:column; justify-content:space-between;
-          background: linear-gradient(160deg, rgba(255,193,7, calc(var(--l) * .85)), rgba(255,140,0, calc(var(--l) * .55)));
-          border: 1px solid rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+  .cell { position: relative; aspect-ratio: 1.3; border-radius: 12px; min-width: 0; overflow: hidden;
+          display:flex; align-items:center; justify-content:center;
+          background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
   .cell.empty { background: none; border: 0; box-shadow: none; }
-  .cell.future { opacity: .25; background: rgba(127,127,127,.08); }
-  .cell.today { border-color: rgba(var(--sun), .9); }
-  .cell i { font-style: normal; font-size: .65rem; opacity: .75; }
-  .cell { min-width: 0; overflow: hidden; }
-  .cell b { font-size: clamp(.6rem, 2.2cqw, .78rem); font-variant-numeric: tabular-nums; align-self: flex-end; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .cell.future { opacity: .3; }
+  .cell.today { border-color: rgba(var(--sun), .9); box-shadow: 0 0 0 1px rgba(var(--sun), .5), inset 0 1px 0 rgba(255,255,255,.1); }
+  /* Production fills the cell from the bottom, like a bar. */
+  .cell .fill { position:absolute; left:0; right:0; bottom:0; height: calc(var(--l) * 100%);
+                background: linear-gradient(180deg, rgba(255,200,60,.85), rgba(224,137,0,.9));
+                box-shadow: 0 -1px 0 rgba(255,236,170,.7) inset; transition: height .8s ease; }
+  .cell i { position:absolute; top: 4px; left: 6px; font-style: normal; font-size: .62rem; font-weight: 600;
+            color: var(--secondary-text-color); line-height: 1; z-index: 1; }
+  .cell.has i { color: rgba(255,255,255,.72); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .cell b { position: relative; z-index: 1; margin-top: 8px; font-size: clamp(.7rem, 2.6cqw, .95rem); font-weight: 700;
+            font-variant-numeric: tabular-nums; color: #fff; padding: 1px 6px; border-radius: 8px;
+            background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  .cell b:empty { display:none; }
   .ybars { display:grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; align-items: end; height: 190px; }
   .mb { display:flex; flex-direction:column; align-items:center; gap: 3px; height: 100%; justify-content: flex-end; }
   .mb .bars { position: relative; width: 100%; flex: 1; display:flex; align-items:flex-end; justify-content:center; gap: 2px; }
@@ -3025,6 +3064,28 @@ const ENERGY_STYLE = `
   .rec b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
   .rec small { font-size: .72rem; color: var(--secondary-text-color); }
   @media (max-width: 460px) { .mb b { display:none; } }
+`;
+
+const SIZE_STYLE = `
+  :host([size="small"]) ha-card { padding: 12px; }
+  :host([size="small"]) .title { font-size: 1rem; }
+  :host([size="small"]) .big { font-size: 1.3rem; }
+  :host([size="small"]) .phases { grid-template-columns: 1fr; }
+  :host([size="small"]) .ph { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  :host([size="small"]) .gauge { max-width: 90px; margin: 0; }
+  :host([size="small"]) .rows { flex: 1 1 120px; }
+  :host([size="small"]) .foot .gpf, :host([size="small"]) .freq .range { display:none; }
+  :host([size="small"]) th:nth-child(4), :host([size="small"]) td:nth-child(4),
+  :host([size="small"]) th:nth-child(5), :host([size="small"]) td:nth-child(5),
+  :host([size="small"]) th:nth-child(10), :host([size="small"]) td:nth-child(10) { display:none; }
+  :host([size="small"]) .sum { grid-template-columns: repeat(3, 1fr); }
+  :host([size="small"]) .sum .tile:nth-child(n+4) { display:none; }
+  :host([size="small"]) .mb b { display:none; }
+  :host([size="small"]) .cell b { font-size: .62rem; padding: 0 3px; }
+  :host([size="small"]) .days { grid-template-columns: repeat(2, 1fr); }
+  :host([size="small"]) .orient, :host([size="small"]) .legend .calib { display:none; }
+  :host([size="large"]) .phases, :host([size="full"]) .phases { gap: 14px; }
+  :host([size="full"]) .recs { grid-template-columns: repeat(5, 1fr); }
 `;
 
 const XSTYLE = `

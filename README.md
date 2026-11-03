@@ -141,7 +141,8 @@ type: custom:enphase-forecast-card
 - Solar → home ↔ grid with live power and animated flow, today's production, use, import and
   export, self-consumption and self-sufficiency bars, panels producing, problems, Enlighten status
 
-Every card has a **Height** slider in its editor (empty = as high as the content). In a
+Every card has a **Size** (Small, Medium, Large, Full width: width in a Sections dashboard and how
+much detail is shown) and a **Height** slider in its editor (empty = as high as the content). In a
 **Sections** dashboard you can also drag the width and height of every card (Layout tab); the
 cards fill the space they get. All cards appear in the card picker (search for "Enphase") and have a visual editor.
 
