@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.11.0";
+const CARD_VERSION = "1.12.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -2296,6 +2296,736 @@ const FORECAST_STYLE = `
   @media (max-width: 460px) { .days { grid-template-columns: repeat(2, 1fr); } }
 `;
 
+/* ===================================================================
+ * Shared helpers for the extra cards.
+ * =================================================================== */
+
+const XT = {
+  en: {
+    grid: "Grid & phases", frequency: "Frequency", imbalance: "Imbalance", current: "Current", pf: "Power factor",
+    production: "Production", importing: "from grid", exporting: "to grid", highest: "Highest today",
+    lowest: "Lowest today", above: "Above 250 V", reactive: "Reactive", apparent: "Apparent", at: "at",
+    no_grid: "No grid meter found (consumption CTs needed).", minutes: "min",
+    inverters: "Microinverters", panel: "Panel", roof: "Roof", phase: "Phase", ac: "AC", dc: "DC",
+    eff: "Eff.", temp: "Temp", today: "Today", health: "Health", report: "Report", ago: "ago",
+    dc_total: "DC in", ac_total: "AC out", losses: "Losses", fleet: "Efficiency", tavg: "Temp avg", tmax: "Temp max",
+    oldest: "Oldest report", now: "now", total: "Lifetime",
+    energy: "Production", month: "Month", year: "Year", records: "Records", best_day: "Best day",
+    best_month: "Best month", this_year: "This year", last_year: "Last year", avg_day: "Average per day",
+    peak_today: "Peak today", lifetime: "Lifetime", days_with_sun: "days", no_stats: "No statistics yet.",
+    vs_last_year: "vs. last year", kwh: "kWh",
+  },
+  nl: {
+    grid: "Net & fasen", frequency: "Frequentie", imbalance: "Onbalans", current: "Stroom", pf: "Arbeidsfactor",
+    production: "Productie", importing: "van het net", exporting: "naar het net", highest: "Hoogste vandaag",
+    lowest: "Laagste vandaag", above: "Boven 250 V", reactive: "Blind", apparent: "Schijnbaar", at: "om",
+    no_grid: "Geen netmeter gevonden (verbruiks-CT's nodig).", minutes: "min",
+    inverters: "Micro-omvormers", panel: "Paneel", roof: "Dak", phase: "Fase", ac: "AC", dc: "DC",
+    eff: "Rend.", temp: "Temp", today: "Vandaag", health: "Gezond", report: "Melding", ago: "geleden",
+    dc_total: "DC in", ac_total: "AC uit", losses: "Verlies", fleet: "Rendement", tavg: "Temp gem.", tmax: "Temp max",
+    oldest: "Oudste melding", now: "nu", total: "Totaal",
+    energy: "Opbrengst", month: "Maand", year: "Jaar", records: "Records", best_day: "Beste dag",
+    best_month: "Beste maand", this_year: "Dit jaar", last_year: "Vorig jaar", avg_day: "Gemiddeld per dag",
+    peak_today: "Piek vandaag", lifetime: "Totaal ooit", days_with_sun: "dagen", no_stats: "Nog geen statistieken.",
+    vs_last_year: "t.o.v. vorig jaar", kwh: "kWh",
+  },
+};
+
+class EnphaseBaseCard extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...config };
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._built = false;
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  static getConfigForm() {
+    return {
+      schema: [{ name: "title", selector: { text: {} } }],
+      computeLabel: (s) => ({ title: "Title / Titel" })[s.name],
+    };
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  _t(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    return (XT[lang] || XT.en)[key] || XT.en[key] || key;
+  }
+
+  _locale() {
+    return this._hass?.locale?.language || this._hass?.language || undefined;
+  }
+
+  _layout() {
+    const id = this._config.entity || findLayoutEntity(this._hass);
+    return id ? this._hass.states[id] : undefined;
+  }
+
+  _g(key) {
+    const id = this._layout()?.attributes.gateway?.[key];
+    return id ? num(this._hass, id) : null;
+  }
+
+  _gState(key) {
+    const id = this._layout()?.attributes.gateway?.[key];
+    return id ? this._hass.states[id] : undefined;
+  }
+
+  _more(entityId) {
+    if (entityId) this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
+  }
+
+  _time(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleTimeString(this._locale(), { hour: "2-digit", minute: "2-digit" }) : "–";
+  }
+}
+
+const fmt = (v, digits = 0) => (v == null || !Number.isFinite(v) ? "–" : v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits }));
+
+function arcPath(cx, cy, r, a0, a1) {
+  const p = (a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const [x0, y0] = p(a0), [x1, y1] = p(a1);
+  return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+}
+
+/* ===================================================================
+ * Grid & phases card: voltage gauges per phase, current, power factor,
+ * frequency, today's extremes.
+ *
+ *   type: custom:enphase-grid-card
+ * =================================================================== */
+
+const V_MIN = 200, V_MAX = 260;
+const V_BANDS = [
+  [200, 207, "#e53935"], [207, 220, "#ffa726"], [220, 245, "#66bb6a"],
+  [245, 250, "#ffa726"], [250, 253, "#ff7043"], [253, 260, "#e53935"],
+];
+
+class EnphaseGridCard extends EnphaseBaseCard {
+  getCardSize() {
+    return 5;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._built) this._build();
+    this._update();
+  }
+
+  _build() {
+    const ang = (v) => Math.PI + ((Math.max(V_MIN, Math.min(V_MAX, v)) - V_MIN) / (V_MAX - V_MIN)) * Math.PI;
+    const bands = V_BANDS.map(([a, b, c]) => `<path d="${arcPath(60, 60, 48, ang(a) + 0.01, ang(b) - 0.01)}" stroke="${c}"/>`).join("");
+    const phase = (p) => `
+      <div class="ph" data-p="${p}">
+        <div class="ph-head"><span class="pchip" style="background:${PHASE_COLORS[p]}">${p}</span><span class="flow"></span></div>
+        <svg class="gauge" viewBox="0 0 120 70">
+          <g class="bands">${bands}</g>
+          <line class="needle" x1="60" y1="60" x2="60" y2="18"/>
+          <circle cx="60" cy="60" r="4" class="hub"/>
+        </svg>
+        <div class="volt"><b>–</b><span>V</span></div>
+        <div class="rows">
+          <span>${esc(this._t("current"))}</span><b class="cur">–</b>
+          <span>${esc(this._t("pf"))}</span><b class="pf">–</b>
+          <span>${esc(this._t("production"))}</span><b class="prod">–</b>
+        </div>
+      </div>`;
+    this.shadowRoot.innerHTML = `
+      <style>${XSTYLE}${GRID_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top">
+          <div class="title">${esc(this._config.title || this._t("grid"))}</div>
+          <button class="freq"><span class="cap">${esc(this._t("frequency"))}</span><b>–</b><span class="unit">Hz</span><span class="range"></span></button>
+        </div>
+        <div class="phases">${["L1", "L2", "L3"].map(phase).join("")}</div>
+        <div class="msg" hidden>${esc(this._t("no_grid"))}</div>
+        <div class="foot">
+          <button class="pill vmax"><span>${esc(this._t("highest"))}</span><b>–</b></button>
+          <button class="pill vmin"><span>${esc(this._t("lowest"))}</span><b>–</b></button>
+          <button class="pill above"><span>${esc(this._t("above"))}</span><b>–</b></button>
+          <button class="pill imb"><span>${esc(this._t("imbalance"))}</span><b>–</b></button>
+          <button class="pill gpf"><span>${esc(this._t("pf"))}</span><b>–</b></button>
+        </div>
+      </ha-card>`;
+    const gw = () => this._layout()?.attributes.gateway || {};
+    const q = (s) => this.shadowRoot.querySelector(s);
+    q(".freq").addEventListener("click", () => this._more(gw().frequency));
+    q(".vmax").addEventListener("click", () => this._more(gw().grid_voltage_max_today));
+    q(".vmin").addEventListener("click", () => this._more(gw().grid_voltage_min_today));
+    q(".above").addEventListener("click", () => this._more(gw().minutes_above_250v_today));
+    q(".imb").addEventListener("click", () => this._more(gw().phase_imbalance));
+    q(".gpf").addEventListener("click", () => this._more(gw().power_factor));
+    this.shadowRoot.querySelectorAll(".ph").forEach((el) =>
+      el.addEventListener("click", () => {
+        const p = el.dataset.p.toLowerCase();
+        this._more(gw()[`grid_phase_voltage_${p}`] || gw()[`production_phase_voltage_${p}`]);
+      })
+    );
+    this._built = true;
+  }
+
+  _update() {
+    if (!this._built || !this._layout()) return;
+    const q = (s) => this.shadowRoot.querySelector(s);
+    let any = false;
+    for (const p of ["L1", "L2", "L3"]) {
+      const k = p.toLowerCase();
+      const el = this.shadowRoot.querySelector(`.ph[data-p="${p}"]`);
+      const v = this._g(`grid_phase_voltage_${k}`) ?? this._g(`production_phase_voltage_${k}`);
+      const net = this._g(`net_phase_power_${k}`);
+      el.hidden = v == null && net == null;
+      if (v != null) any = true;
+      el.querySelector(".volt b").textContent = fmt(v, 1);
+      const deg = v == null ? -90 : -90 + ((Math.max(V_MIN, Math.min(V_MAX, v)) - V_MIN) / (V_MAX - V_MIN)) * 180;
+      el.querySelector(".needle").style.transform = `rotate(${deg}deg)`;
+      el.classList.toggle("warn", v != null && v > 250);
+      el.classList.toggle("bad", v != null && (v >= 253 || v < 207));
+      el.querySelector(".cur").textContent = `${fmt(this._g(`grid_phase_current_${k}`), 2)} A`;
+      const pf = this._g(`grid_phase_power_factor_${k}`);
+      el.querySelector(".pf").textContent = fmt(pf, 2);
+      el.querySelector(".prod").textContent = `${fmt(this._g(`production_phase_power_${k}`))} W`;
+      const flow = el.querySelector(".flow");
+      flow.textContent = net == null ? "" : `${net > 0 ? "↓" : "↑"} ${fmt(Math.abs(net))} W`;
+      flow.className = `flow ${net == null ? "" : net > 0 ? "in" : "out"}`;
+      flow.title = net == null ? "" : this._t(net > 0 ? "importing" : "exporting");
+    }
+    q(".msg").hidden = any;
+    q(".freq b").textContent = fmt(this._g("frequency"), 2);
+    const fmin = this._g("frequency_min_today"), fmax = this._g("frequency_max_today");
+    q(".freq .range").textContent = fmin != null && fmax != null ? `${fmt(fmin, 2)}–${fmt(fmax, 2)}` : "";
+    const vmaxAt = this._gState("grid_voltage_max_time")?.state;
+    q(".vmax b").textContent = `${fmt(this._g("grid_voltage_max_today"), 1)} V${vmaxAt && vmaxAt !== "unknown" ? ` · ${this._time(vmaxAt)}` : ""}`;
+    q(".vmax").classList.toggle("warn", (this._g("grid_voltage_max_today") || 0) > 250);
+    q(".vmin b").textContent = `${fmt(this._g("grid_voltage_min_today"), 1)} V`;
+    const above = this._g("minutes_above_250v_today");
+    q(".above b").textContent = `${fmt(above)} ${this._t("minutes")}`;
+    q(".above").classList.toggle("warn", (above || 0) > 0);
+    q(".imb b").textContent = `${fmt(this._g("phase_imbalance"), 1)} A`;
+    q(".gpf b").textContent = fmt(this._g("power_factor"), 2);
+  }
+}
+
+const GRID_STYLE = `
+  .top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .freq { display:flex; align-items:baseline; gap:6px; padding: 6px 12px; border-radius: 999px; }
+  .freq b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+  .freq .range { font-size: .72rem; color: var(--secondary-text-color); }
+  .phases { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .ph { padding: 12px; border-radius: 18px; cursor: pointer; display:flex; flex-direction:column; gap: 4px;
+        background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine);
+        transition: transform .15s ease, border-color .2s; }
+  .ph:hover { transform: translateY(-2px); }
+  .ph[hidden] { display:none; }
+  .ph.warn { border-color: rgba(255,167,38,.6); }
+  .ph.bad { border-color: rgba(229,57,53,.75); box-shadow: 0 0 0 1px rgba(229,57,53,.4), var(--g-shine); }
+  .ph-head { display:flex; justify-content:space-between; align-items:center; }
+  .pchip { font-size: .7rem; font-weight: 700; color: #fff; padding: 2px 8px; border-radius: 999px; }
+  .flow { font-size: .78rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .flow.in { color: rgb(171,71,188); }
+  .flow.out { color: rgb(102,187,106); }
+  .gauge { width: 100%; max-width: 170px; margin: 2px auto -6px; display:block; overflow: visible; }
+  .bands path { fill: none; stroke-width: 9; stroke-linecap: round; opacity: .85; }
+  .needle { stroke: var(--primary-text-color); stroke-width: 2.5; stroke-linecap: round; transform-origin: 60px 60px;
+            transition: transform 1.2s cubic-bezier(.2,.9,.25,1.15); }
+  .hub { fill: var(--primary-text-color); }
+  .volt { text-align:center; }
+  .volt b { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .volt span { color: var(--secondary-text-color); margin-left: 3px; }
+  .rows { display:grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: .78rem; margin-top: 4px; }
+  .rows span { color: var(--secondary-text-color); }
+  .rows b { font-variant-numeric: tabular-nums; text-align:right; font-weight: 600; }
+  .foot { display:flex; flex-wrap:wrap; gap: 6px; margin-top: 12px; }
+`;
+
+/* ===================================================================
+ * Microinverter table: every value of every microinverter, sortable.
+ *
+ *   type: custom:enphase-inverters-card
+ * =================================================================== */
+
+const INV_COLS = [
+  ["panel", (r) => r.label + r.serial],
+  ["phase", (r) => r.phase || ""],
+  ["ac", (r) => r.ac],
+  ["dc", (r) => r.dc],
+  ["dcv", (r) => r.dcv],
+  ["eff", (r) => r.eff],
+  ["temp", (r) => r.temp],
+  ["today", (r) => r.today],
+  ["health", (r) => r.health],
+  ["report", (r) => r.age],
+];
+
+class EnphaseInvertersCard extends EnphaseBaseCard {
+  getCardSize() {
+    return 9;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._built) this._build();
+    const now = Date.now();
+    if (!this._lastPaint || now - this._lastPaint > 3000) this._update();
+  }
+
+  _build() {
+    this._sort = this._sort || ["ac", -1];
+    const label = { panel: "panel", phase: "phase", ac: "ac", dc: "dc", dcv: "dc", eff: "eff", temp: "temp", today: "today", health: "health", report: "report" };
+    const units = { ac: "W", dc: "W", dcv: "V · A", eff: "%", temp: "°C", today: "kWh", health: "%", report: "" };
+    this.shadowRoot.innerHTML = `
+      <style>${XSTYLE}${INV_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top"><div class="title">${esc(this._config.title || this._t("inverters"))}</div><span class="count"></span></div>
+        <div class="sum">
+          ${["dc_total", "ac_total", "losses", "fleet", "tavg", "tmax", "oldest"]
+            .map((k) => `<button class="tile" data-k="${k}"><span>${esc(this._t(k))}</span><b>–</b></button>`)
+            .join("")}
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr>${INV_COLS.map(([k]) => `<th data-k="${k}"><span>${esc(this._t(label[k]))}${k === "dcv" ? " V·A" : ""}</span>${units[k] && k !== "dcv" ? `<small>${units[k]}</small>` : ""}<i class="arrow"></i></th>`).join("")}</tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </ha-card>`;
+    this.shadowRoot.querySelectorAll("th").forEach((th) =>
+      th.addEventListener("click", () => {
+        const k = th.dataset.k;
+        this._sort = [k, this._sort[0] === k ? -this._sort[1] : k === "panel" || k === "phase" ? 1 : -1];
+        this._update();
+      })
+    );
+    const map = { dc_total: "inverters_dc_power", ac_total: "production_power", losses: "conversion_losses", fleet: "fleet_efficiency", tavg: "inverter_temperature_avg", tmax: "inverter_temperature_max", oldest: "oldest_inverter_report" };
+    this.shadowRoot.querySelectorAll(".sum .tile").forEach((b) =>
+      b.addEventListener("click", () => this._more(this._layout()?.attributes.gateway?.[map[b.dataset.k]]))
+    );
+    this._built = true;
+  }
+
+  _rows() {
+    const hass = this._hass;
+    const arrays = this._layout()?.attributes.arrays || [];
+    const rows = [];
+    for (const a of arrays)
+      for (const m of a.modules) {
+        if (!m.serial) continue;
+        const rep = m.last_report ? hass.states[m.last_report]?.state : null;
+        const t = rep ? Date.parse(rep) : NaN;
+        rows.push({
+          m, serial: m.serial, label: a.label || "", phase: m.phase,
+          ac: num(hass, m.power), dc: num(hass, m.dc_power), dcv: num(hass, m.dc_voltage), dca: num(hass, m.dc_current),
+          eff: num(hass, m.efficiency), temp: num(hass, m.temperature), today: num(hass, m.today),
+          health: num(hass, m.performance_week) ?? num(hass, m.performance),
+          problem: isOn(hass, m.underperforming) || isOn(hass, m.no_output),
+          age: Number.isFinite(t) ? (Date.now() - t) / 60000 : null,
+        });
+      }
+    return rows;
+  }
+
+  _update() {
+    if (!this._built || !this._layout()) return;
+    this._lastPaint = Date.now();
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const rows = this._rows();
+    const [key, dir] = this._sort;
+    const getter = INV_COLS.find(([k]) => k === key)[1];
+    rows.sort((a, b) => {
+      const x = getter(a), y = getter(b);
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return (typeof x === "string" ? x.localeCompare(y, undefined, { numeric: true }) : x - y) * dir;
+    });
+    const maxAc = Math.max(1, ...rows.map((r) => r.ac || 0));
+    const maxToday = Math.max(0.001, ...rows.map((r) => r.today || 0));
+    const ago = (m) => (m == null ? "–" : m < 1 ? this._t("now") : `${Math.round(m)} ${this._t("minutes")}`);
+    q("tbody").innerHTML = rows
+      .map((r) => `
+        <tr class="${r.problem ? "problem" : ""}" data-e="${esc(r.m.power || "")}">
+          <td class="panel"><b>…${esc(r.serial.slice(-4))}</b><small>${esc(r.label)}</small></td>
+          <td>${r.phase ? `<span class="pchip" style="background:${PHASE_COLORS[r.phase] || "#616161"}">${esc(r.phase)}</span>` : "–"}</td>
+          <td class="bar"><i style="width:${((r.ac || 0) / maxAc) * 100}%"></i><b>${fmt(r.ac)}</b></td>
+          <td>${fmt(r.dc)}</td>
+          <td class="dim">${fmt(r.dcv, 1)} · ${fmt(r.dca, 2)}</td>
+          <td class="${r.eff != null && r.eff < 93 ? "low" : ""}">${fmt(r.eff, 1)}</td>
+          <td class="${r.temp != null && r.temp > 60 ? "hot" : ""}">${fmt(r.temp)}</td>
+          <td class="bar today"><i style="width:${((r.today || 0) / maxToday) * 100}%"></i><b>${fmt(r.today == null ? null : r.today / 1000, 2)}</b></td>
+          <td class="${r.health != null ? (r.health >= 95 ? "ok" : r.health >= 88 ? "mid" : "low") : ""}">${fmt(r.health)}</td>
+          <td class="dim ${r.age != null && r.age > 30 ? "late" : ""}">${ago(r.age)}</td>
+        </tr>`)
+      .join("");
+    this.shadowRoot.querySelectorAll("tbody tr").forEach((tr) => tr.addEventListener("click", () => this._more(tr.dataset.e)));
+    this.shadowRoot.querySelectorAll("th").forEach((th) => {
+      th.classList.toggle("on", th.dataset.k === key);
+      th.querySelector(".arrow").textContent = th.dataset.k === key ? (dir > 0 ? "▲" : "▼") : "";
+    });
+    q(".count").textContent = `${rows.filter((r) => (r.ac || 0) > 0).length} / ${rows.length}`;
+    const vals = {
+      dc_total: `${fmt(this._g("inverters_dc_power"))} W`,
+      ac_total: `${fmt(this._g("production_power"))} W`,
+      losses: `${fmt(this._g("conversion_losses"))} W`,
+      fleet: `${fmt(this._g("fleet_efficiency"), 1)} %`,
+      tavg: `${fmt(this._g("inverter_temperature_avg"), 1)} °C`,
+      tmax: `${fmt(this._g("inverter_temperature_max"))} °C`,
+      oldest: ago(this._g("oldest_inverter_report")),
+    };
+    this.shadowRoot.querySelectorAll(".sum .tile").forEach((b) => (b.querySelector("b").textContent = vals[b.dataset.k]));
+  }
+}
+
+const INV_STYLE = `
+  .top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 12px; }
+  .count { font-size: .8rem; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  .sum { display:grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .sum .tile { font: inherit; color: inherit; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:2px;
+               padding: 8px 10px; border-radius: 14px; }
+  .sum .tile span { font-size: .7rem; color: var(--secondary-text-color); }
+  .sum .tile b { font-size: .95rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; border-radius: 16px; border: 1px solid var(--g-edge); background: rgba(0,0,0,.12); }
+  table { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
+  th { position: sticky; top: 0; text-align: right; font-weight: 600; font-size: .7rem; color: var(--secondary-text-color);
+       padding: 8px 8px; cursor: pointer; white-space: nowrap; user-select: none;
+       background: color-mix(in srgb, var(--card-background-color, #1c1c1c) 92%, transparent); border-bottom: 1px solid var(--g-edge); }
+  th small { display:block; font-weight: 400; opacity: .7; }
+  th.on { color: rgb(var(--sun)); }
+  th .arrow { font-style: normal; margin-left: 3px; font-size: .6rem; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.05); white-space: nowrap; }
+  tbody tr { cursor: pointer; transition: background .15s; }
+  tbody tr:hover { background: rgba(255,255,255,.05); }
+  tbody tr.problem td:first-child { box-shadow: inset 3px 0 0 var(--error-color, #e53935); }
+  td.panel b { display:block; font-size: .82rem; }
+  td.panel small { color: var(--secondary-text-color); font-size: .68rem; }
+  td.bar { position: relative; min-width: 64px; }
+  td.bar i { position:absolute; right: 6px; top: 50%; transform: translateY(-50%); height: 60%; border-radius: 6px;
+             background: linear-gradient(90deg, rgba(var(--sun), .05), rgba(var(--sun), .35)); max-width: calc(100% - 12px); }
+  td.bar.today i { background: linear-gradient(90deg, rgba(255,193,7,.05), rgba(255,193,7,.3)); }
+  td.bar b { position: relative; font-weight: 600; }
+  td.dim { color: var(--secondary-text-color); }
+  td.low { color: var(--error-color, #e53935); font-weight: 600; }
+  td.mid { color: #ffa726; }
+  td.ok { color: #66bb6a; }
+  td.hot { color: #ff7043; font-weight: 600; }
+  td.late { color: #ffa726; }
+  .pchip { font-size: .65rem; font-weight: 700; color: #fff; padding: 1px 7px; border-radius: 999px; }
+`;
+
+/* ===================================================================
+ * Energy history card: month calendar, year bars and records, from the
+ * long-term statistics of the lifetime production counter.
+ *
+ *   type: custom:enphase-energy-card
+ * =================================================================== */
+
+class EnphaseEnergyCard extends EnphaseBaseCard {
+  getCardSize() {
+    return 7;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._built) this._build();
+    if (!this._loaded && !this._loading) this._load();
+  }
+
+  _build() {
+    this._tab = this._tab || "month";
+    const now = new Date();
+    this._month = this._month || new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    this.shadowRoot.innerHTML = `
+      <style>${XSTYLE}${ENERGY_STYLE}${GLASS}</style>
+      <ha-card>
+        <div class="top">
+          <div class="title">${esc(this._config.title || this._t("energy"))}</div>
+          <div class="seg">${["month", "year", "records"].map((t) => `<button data-t="${t}">${esc(this._t(t))}</button>`).join("")}</div>
+        </div>
+        <div class="body"><div class="msg">…</div></div>
+      </ha-card>`;
+    this.shadowRoot.querySelectorAll(".seg button").forEach((b) =>
+      b.addEventListener("click", () => {
+        this._tab = b.dataset.t;
+        this._paint();
+      })
+    );
+    this.shadowRoot.querySelector(".body").addEventListener("click", (e) => {
+      const nav = e.target.closest("[data-nav]");
+      if (!nav) return;
+      const d = new Date(this._month);
+      d.setMonth(d.getMonth() + +nav.dataset.nav);
+      if (d.getTime() <= Date.now()) {
+        this._month = d.getTime();
+        this._paint();
+      }
+    });
+    this._built = true;
+  }
+
+  async _load() {
+    this._loading = true;
+    const hass = this._hass;
+    const layout = this._layout();
+    const serial = layout?.attributes.serial;
+    const own = layout?.attributes.gateway?.production_lifetime;
+    const ids = [own].filter(Boolean);
+    for (const [id, st] of Object.entries(hass.states)) {
+      if (id === own || !id.startsWith("sensor.") || !serial || !id.includes(serial)) continue;
+      const u = st.attributes.unit_of_measurement;
+      if ((u === "Wh" || u === "kWh" || u === "MWh") && st.attributes.state_class === "total_increasing" &&
+          /lifetime|totaal|total/i.test(id) && /produc/i.test(id) && !/net|consum|verbruik|_l\d$/i.test(id))
+        ids.push(id);
+    }
+    if (!ids.length) {
+      this._loading = false;
+      this._loaded = true;
+      this._days = {};
+      return this._paint();
+    }
+    try {
+      const meta = await hass.callWS({ type: "recorder/get_statistics_metadata", statistic_ids: ids });
+      const unit = Object.fromEntries(meta.map((m) => [m.statistic_id, m.statistics_unit_of_measurement]));
+      const start = new Date();
+      start.setFullYear(start.getFullYear() - 2, 0, 1);
+      start.setHours(0, 0, 0, 0);
+      const stats = await hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: start.toISOString(),
+        statistic_ids: ids,
+        period: "day",
+        types: ["change"],
+      });
+      const best = ids.reduce((b, id) => ((stats[id] || []).length > (stats[b] || []).length ? id : b), ids[0]);
+      const k = { Wh: 0.001, kWh: 1, MWh: 1000 }[unit[best]] ?? 1;
+      const toMs = (v) => (typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(v));
+      const days = {};
+      for (const r of stats[best] || []) {
+        if (r.change == null) continue;
+        const d = new Date(toMs(r.start));
+        days[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`] = Math.max(0, r.change * k);
+      }
+      this._days = days;
+      this._source = best;
+    } catch (err) {
+      this._days = {};
+    }
+    this._loading = false;
+    this._loaded = true;
+    this._paint();
+    // Refresh every 30 minutes for today's value.
+    clearTimeout(this._reload);
+    this._reload = setTimeout(() => (this._loaded = false), 30 * 60000);
+  }
+
+  _day(d) {
+    return this._days?.[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`];
+  }
+
+  _paint() {
+    if (!this._built) return;
+    this.shadowRoot.querySelectorAll(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.t === this._tab));
+    const body = this.shadowRoot.querySelector(".body");
+    if (!this._days) return;
+    if (!Object.keys(this._days).length) {
+      body.innerHTML = `<div class="msg">${esc(this._t("no_stats"))}</div>`;
+      return;
+    }
+    body.innerHTML = this._tab === "month" ? this._monthHtml() : this._tab === "year" ? this._yearHtml() : this._recordsHtml();
+  }
+
+  _monthHtml() {
+    const loc = this._locale();
+    const first = new Date(this._month);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysIn = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const vals = [];
+    for (let i = 1; i <= daysIn; i++) vals.push(this._day(new Date(first.getFullYear(), first.getMonth(), i)));
+    const max = Math.max(0.1, ...vals.filter((v) => v != null));
+    const total = vals.reduce((a, v) => a + (v || 0), 0);
+    const counted = vals.filter((v) => v != null).length;
+    // Compare the same days of last year (only up to today in the running month).
+    let lastYear = 0, sameDays = 0;
+    vals.forEach((v, i) => {
+      if (v == null) return;
+      sameDays += v;
+      lastYear += this._day(new Date(first.getFullYear() - 1, first.getMonth(), i + 1)) || 0;
+    });
+    const lead = (first.getDay() + 6) % 7;
+    const monday = new Date(2024, 0, 1);
+    const names = [...Array(7)].map((_, i) => new Date(monday.getTime() + i * 86400000).toLocaleDateString(loc, { weekday: "short" }).replace(".", "").slice(0, 2));
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(`<span class="cell empty"></span>`);
+    vals.forEach((v, i) => {
+      const d = new Date(first.getFullYear(), first.getMonth(), i + 1);
+      const future = d > today;
+      const level = v == null ? 0 : Math.max(0.08, v / max);
+      cells.push(`<span class="cell ${future ? "future" : ""} ${d.getTime() === today.getTime() ? "today" : ""}" style="--l:${level.toFixed(3)}" title="${esc(d.toLocaleDateString(loc, { weekday: "long", day: "numeric", month: "long" }))}: ${fmt(v, 1)} kWh">
+        <i>${i + 1}</i><b>${v == null || future ? "" : fmt(v, v < 10 ? 1 : 0)}</b></span>`);
+    });
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    const diff = lastYear > 0 ? Math.round((sameDays / lastYear - 1) * 100) : null;
+    return `
+      <div class="mhead">
+        <button class="nav" data-nav="-1">${ICONS.prev}</button>
+        <span class="mtitle">${esc(first.toLocaleDateString(loc, { month: "long", year: "numeric" }))}</span>
+        <button class="nav" data-nav="1" ${first.getTime() >= thisMonth ? "disabled" : ""}>${ICONS.next}</button>
+      </div>
+      <div class="figs">
+        <div><b class="big">${fmt(total, total < 100 ? 1 : 0)}</b><span class="unit">kWh</span></div>
+        <div><span class="cap">${esc(this._t("avg_day"))}</span><b>${fmt(counted ? total / counted : null, 1)} kWh</b></div>
+        ${diff != null ? `<div><span class="cap">${esc(this._t("vs_last_year"))}</span><b class="${diff >= 0 ? "up" : "down"}">${diff >= 0 ? "+" : ""}${diff} %</b></div>` : ""}
+      </div>
+      <div class="cal">${names.map((n) => `<span class="wd">${esc(n)}</span>`).join("")}${cells.join("")}</div>`;
+  }
+
+  _months(year) {
+    const out = [];
+    for (let m = 0; m < 12; m++) {
+      let s = 0, n = 0;
+      const days = new Date(year, m + 1, 0).getDate();
+      for (let i = 1; i <= days; i++) {
+        const v = this._day(new Date(year, m, i));
+        if (v != null) {
+          s += v;
+          n++;
+        }
+      }
+      out.push(n ? s : null);
+    }
+    return out;
+  }
+
+  _yearHtml() {
+    const loc = this._locale();
+    const y = new Date().getFullYear();
+    const cur = this._months(y), prev = this._months(y - 1);
+    const max = Math.max(1, ...cur.filter(Boolean), ...prev.filter(Boolean));
+    const bars = cur
+      .map((v, m) => {
+        const name = new Date(y, m, 1).toLocaleDateString(loc, { month: "short" }).replace(".", "");
+        return `<div class="mb" title="${esc(name)}: ${fmt(v)} kWh (${y - 1}: ${fmt(prev[m])} kWh)">
+          <div class="bars"><i class="prev" style="height:${((prev[m] || 0) / max) * 100}%"></i><i class="cur" style="height:${((v || 0) / max) * 100}%"></i></div>
+          <b>${v == null ? "" : fmt(v)}</b><span>${esc(name)}</span></div>`;
+      })
+      .join("");
+    const tot = cur.reduce((a, v) => a + (v || 0), 0), totPrev = prev.reduce((a, v) => a + (v || 0), 0);
+    return `
+      <div class="figs">
+        <div><span class="cap">${y}</span><b class="big">${fmt(tot)}</b><span class="unit">kWh</span></div>
+        <div><span class="cap">${y - 1}</span><b>${fmt(totPrev)} kWh</b></div>
+      </div>
+      <div class="ybars">${bars}</div>
+      <div class="legend"><span><i class="lg cur"></i>${y}</span><span><i class="lg prev"></i>${y - 1}</span></div>`;
+  }
+
+  _recordsHtml() {
+    const loc = this._locale();
+    const entries = Object.entries(this._days).map(([k, v]) => {
+      const [y, m, d] = k.split("-").map(Number);
+      return [new Date(y, m, d), v];
+    });
+    const best = entries.reduce((b, e) => (!b || e[1] > b[1] ? e : b), null);
+    const months = {};
+    for (const [d, v] of entries) {
+      const k = `${d.getFullYear()}-${d.getMonth()}`;
+      months[k] = (months[k] || 0) + v;
+    }
+    const bestMonth = Object.entries(months).reduce((b, e) => (!b || e[1] > b[1] ? e : b), null);
+    const y = new Date().getFullYear();
+    const yearTotal = entries.filter(([d]) => d.getFullYear() === y).reduce((a, [, v]) => a + v, 0);
+    const lifetime = this._g("production_lifetime");
+    const peak = this._g("peak_power_today");
+    const peakTime = this._gState("peak_power_time")?.state;
+    const sunny = entries.filter(([d, v]) => d.getFullYear() === y && v > 1).length;
+    const [bmY, bmM] = bestMonth ? bestMonth[0].split("-").map(Number) : [0, 0];
+    const rec = (icon, label, value, sub) => `<div class="rec"><span class="ico">${icon}</span><div><span class="cap">${esc(label)}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ""}</div></div>`;
+    return `<div class="recs">
+      ${rec("☀️", this._t("best_day"), best ? `${fmt(best[1], 1)} kWh` : "–", best ? esc(best[0].toLocaleDateString(loc, { day: "numeric", month: "long", year: "numeric" })) : "")}
+      ${rec("📅", this._t("best_month"), bestMonth ? `${fmt(bestMonth[1])} kWh` : "–", bestMonth ? esc(new Date(bmY, bmM, 1).toLocaleDateString(loc, { month: "long", year: "numeric" })) : "")}
+      ${rec("📈", this._t("this_year"), `${fmt(yearTotal)} kWh`, `${sunny} ${esc(this._t("days_with_sun"))}`)}
+      ${rec("⚡", this._t("peak_today"), peak == null ? "–" : `${fmt(peak)} W`, peakTime ? `${esc(this._t("at"))} ${this._time(peakTime)}` : "")}
+      ${rec("🏆", this._t("lifetime"), lifetime == null ? "–" : `${fmt(lifetime / (this._gState("production_lifetime")?.attributes.unit_of_measurement === "MWh" ? 1 : this._gState("production_lifetime")?.attributes.unit_of_measurement === "kWh" ? 1000 : 1e6), 2)} MWh`, "")}
+    </div>`;
+  }
+}
+
+const ENERGY_STYLE = `
+  .top { display:flex; justify-content:space-between; align-items:center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .seg { display:inline-flex; gap:2px; padding:3px; border-radius:999px; background: rgba(127,127,127,.12); }
+  .seg button { font: inherit; font-size: .8rem; border:0; background: transparent; color: var(--secondary-text-color);
+                padding: 6px 13px; border-radius: 999px; cursor:pointer; }
+  .seg button.on { color: var(--primary-text-color); font-weight: 600;
+                   background: linear-gradient(160deg, rgba(255,255,255,.26), rgba(255,255,255,.08));
+                   box-shadow: 0 4px 14px -4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.35); }
+  .mhead { display:flex; align-items:center; justify-content:space-between; margin-bottom: 6px; }
+  .mtitle { font-weight: 650; text-transform: capitalize; }
+  .nav { width:32px; height:32px; border-radius:50%; border:0; background:transparent; cursor:pointer; color: var(--primary-text-color); display:grid; place-items:center; }
+  .nav svg { width:20px; height:20px; fill: currentColor; }
+  .nav:disabled { opacity: .25; cursor: default; }
+  .figs { display:flex; gap: 22px; flex-wrap: wrap; align-items: baseline; margin: 4px 0 12px; }
+  .figs > div { display:flex; align-items: baseline; gap: 5px; }
+  .figs .cap { margin: 0; }
+  .figs b.up { color: #66bb6a; }
+  .figs b.down { color: #ef5350; }
+  .cal { display:grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal .wd { text-align:center; font-size:.68rem; text-transform: uppercase; color: var(--secondary-text-color); }
+  .cell { position: relative; aspect-ratio: 1.45; border-radius: 12px; padding: 4px 6px; display:flex; flex-direction:column; justify-content:space-between;
+          background: linear-gradient(160deg, rgba(255,193,7, calc(var(--l) * .85)), rgba(255,140,0, calc(var(--l) * .55)));
+          border: 1px solid rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+  .cell.empty { background: none; border: 0; box-shadow: none; }
+  .cell.future { opacity: .25; background: rgba(127,127,127,.08); }
+  .cell.today { border-color: rgba(var(--sun), .9); }
+  .cell i { font-style: normal; font-size: .65rem; opacity: .75; }
+  .cell b { font-size: .78rem; font-variant-numeric: tabular-nums; align-self: flex-end; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .ybars { display:grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: end; height: 190px; }
+  .mb { display:flex; flex-direction:column; align-items:center; gap: 3px; height: 100%; justify-content: flex-end; }
+  .mb .bars { position: relative; width: 100%; flex: 1; display:flex; align-items:flex-end; justify-content:center; gap: 2px; }
+  .mb .bars i { display:block; width: 42%; border-radius: 6px 6px 3px 3px; transition: height .8s ease; }
+  .mb i.cur { background: linear-gradient(180deg, #ffd27a, rgb(var(--sun)) 60%, #e08900); box-shadow: 0 0 10px rgba(var(--sun), .35); }
+  .mb i.prev { background: rgba(255,255,255,.18); }
+  .mb b { font-size: .62rem; font-variant-numeric: tabular-nums; min-height: 1em; }
+  .mb span { font-size: .65rem; color: var(--secondary-text-color); text-transform: capitalize; }
+  .legend { display:flex; gap: 14px; margin-top: 8px; font-size: .75rem; color: var(--secondary-text-color); }
+  .lg { display:inline-block; width: 12px; height: 8px; border-radius: 3px; margin-right: 5px; }
+  .lg.cur { background: rgb(var(--sun)); }
+  .lg.prev { background: rgba(255,255,255,.25); }
+  .recs { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .rec { display:flex; gap: 10px; align-items:center; padding: 12px; border-radius: 16px;
+         background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine); }
+  .rec .ico { font-size: 1.4rem; width: 40px; height: 40px; display:grid; place-items:center; border-radius: 50%;
+              background: rgba(var(--sun), .14); flex: none; }
+  .rec > div { display:flex; flex-direction:column; min-width: 0; }
+  .rec b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  .rec small { font-size: .72rem; color: var(--secondary-text-color); }
+  @media (max-width: 460px) { .mb b { display:none; } }
+`;
+
+const XSTYLE = `
+  :host { --sun: 255,176,32; }
+  ha-card { padding: 16px; overflow: hidden; }
+  .title { font-size: 1.15rem; font-weight: 500; }
+  .cap { color: var(--secondary-text-color); font-size: .78rem; }
+  .big { font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .unit { color: var(--secondary-text-color); font-size: .9rem; }
+  button { font: inherit; color: inherit; }
+  .pill { display:flex; flex-direction:column; align-items:flex-start; gap:1px; cursor:pointer; padding: 7px 12px; border-radius: 14px;
+          background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine); }
+  .pill span { font-size: .68rem; color: var(--secondary-text-color); }
+  .pill b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .pill.warn { border-color: rgba(255,167,38,.7); }
+  .pill.warn b { color: #ffa726; }
+  .freq { cursor: pointer; background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine); }
+  .msg { padding: 14px; border-radius: 16px; font-size: .85rem; color: var(--secondary-text-color);
+         background: var(--g-fill-soft); border: 1px solid var(--g-edge); }
+  .msg[hidden] { display:none; }
+`;
+
 /* Liquid glass look shared by both cards. */
 const GLASS = `
   :host {
@@ -2387,6 +3117,12 @@ const CARDS = [
   ]),
   ["enphase-forecast-card", EnphaseForecastCard, "Enphase solar forecast",
    "Expected vs. produced, yesterday to the day after tomorrow, calibrated on your own panels."],
+  ["enphase-grid-card", EnphaseGridCard, "Enphase grid & phases",
+   "Voltage gauges per phase (with the 253 V limit), current, power factor, frequency and today's extremes."],
+  ["enphase-inverters-card", EnphaseInvertersCard, "Enphase microinverters",
+   "Every microinverter in a sortable table: AC, DC, efficiency, temperature, today, health and last report."],
+  ["enphase-energy-card", EnphaseEnergyCard, "Enphase production history",
+   "Calendar of daily production, months compared with last year, and records."],
   ["enphase-system-card", EnphaseSystemCard, "Enphase system summary",
    "Solar, home and grid at a glance, today's energy, self-consumption and status."],
 ];

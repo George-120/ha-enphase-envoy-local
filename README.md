@@ -115,6 +115,28 @@ size: large        # small | medium (default) | large | full
 type: custom:enphase-forecast-card
 ```
 
+**Grid & phases card** (`custom:enphase-grid-card`)
+- A voltage gauge per phase with the 207–253 V limits, current, power factor, import/export and
+  production per phase; frequency with today's range; highest/lowest voltage today, minutes above
+  250 V and phase imbalance
+
+**Microinverters card** (`custom:enphase-inverters-card`)
+- Every microinverter in one sortable table: AC and DC power, DC voltage and current, efficiency,
+  temperature, today, health and minutes since its last report, plus DC in / AC out / losses /
+  efficiency / temperatures of the whole system
+
+**Production history card** (`custom:enphase-energy-card`)
+- Month calendar with the production of every day, months of this year against last year, and
+  records (best day, best month, this year, peak today, lifetime), from the long-term statistics
+
+**For the curious** (extra sensors)
+- Grid voltage, current, power factor, reactive and apparent power per phase; reactive/apparent
+  power and power factor of the grid and of the production
+- Highest and lowest grid voltage today (with time), minutes above 250 V today, lowest/highest
+  frequency today, peak production today (with time), phase imbalance
+- DC power of all panels, conversion losses, efficiency of all microinverters together, average and
+  highest microinverter temperature, oldest microinverter report, gateway response time
+
 **System summary card** (`custom:enphase-system-card`)
 - Solar → home ↔ grid with live power and animated flow, today's production, use, import and
   export, self-consumption and self-sufficiency bars, panels producing, problems, Enlighten status

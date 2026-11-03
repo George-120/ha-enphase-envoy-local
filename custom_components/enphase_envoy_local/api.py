@@ -67,6 +67,9 @@ class PhaseData:
     current: float | None = None
     energy_today: float | None = None
     energy_lifetime: float | None = None
+    reactive_power: float | None = None  # var
+    apparent_power: float | None = None  # VA
+    power_factor: float | None = None
 
 
 @dataclass(slots=True)
@@ -158,6 +161,24 @@ class EnvoyData:
     grid_export_today: float | None = None
     frequency: float | None = None
     power_factor: float | None = None
+    # Meter channels (per phase) and totals of the grid and production meters.
+    grid_phases: list[PhaseData] = field(default_factory=list)
+    grid_reactive_power: float | None = None
+    grid_apparent_power: float | None = None
+    production_reactive_power: float | None = None
+    production_apparent_power: float | None = None
+    production_power_factor: float | None = None
+    # Extremes of today, kept by the coordinator.
+    peak_power_today: float | None = None
+    peak_power_time: datetime | None = None
+    grid_voltage_max_today: float | None = None
+    grid_voltage_max_time: datetime | None = None
+    grid_voltage_min_today: float | None = None
+    grid_voltage_min_time: datetime | None = None
+    minutes_above_250v_today: float | None = None
+    frequency_min_today: float | None = None
+    frequency_max_today: float | None = None
+    response_time: float | None = None  # ms for production.json
 
     reading_time: datetime | None = None
     inverters: dict[str, InverterData] = field(default_factory=dict)
@@ -568,6 +589,30 @@ def _power_factor(reading: dict[str, Any]) -> float | None:
     return round(min(abs(active) / apparent, 1.0), 3)
 
 
+def _meter_phase(chan: dict[str, Any]) -> PhaseData:
+    """One channel of a meter reading."""
+    active = _num(chan.get("activePower"))
+    apparent = _num(chan.get("apparentPower"))
+    pf = None
+    if active is not None and apparent and apparent >= 1:
+        pf = round(min(abs(active) / apparent, 1.0), 3)
+    return PhaseData(
+        power=active,
+        voltage=_num(chan.get("voltage")),
+        current=_num(chan.get("current")),
+        reactive_power=_num(chan.get("reactivePower")),
+        apparent_power=apparent,
+        power_factor=pf,
+    )
+
+
+def _sum_channels(channels: list[dict[str, Any]], key: str, reading: dict[str, Any]) -> float | None:
+    values = [_num(c.get(key)) for c in channels]
+    if channels and all(v is not None for v in values):
+        return round(sum(values), 1)
+    return _num(reading.get(key))
+
+
 def _parse_meters(
     data: EnvoyData,
     meters: list[dict[str, Any]] | None,
@@ -585,14 +630,28 @@ def _parse_meters(
         if not isinstance(reading, dict):
             continue
         kind = kinds.get(reading.get("eid"))
+        channels = [c for c in reading.get("channels") or [] if isinstance(c, dict)]
         if kind == "net-consumption":
+            data.grid_phases = [_meter_phase(c) for c in channels if _num(c.get("voltage"))]
+            data.grid_reactive_power = _sum_channels(channels, "reactivePower", reading)
+            data.grid_apparent_power = _sum_channels(channels, "apparentPower", reading)
             # Delivered = taken from the grid, received = fed into the grid.
             data.grid_import_lifetime = _num(reading.get("actEnergyDlvd"))
             data.grid_export_lifetime = _num(reading.get("actEnergyRcvd"))
             data.frequency = _num(reading.get("freq"))
             data.power_factor = _power_factor(reading)
-        elif kind == "production" and data.frequency is None:
-            data.frequency = _num(reading.get("freq"))
+        elif kind == "production":
+            if data.frequency is None:
+                data.frequency = _num(reading.get("freq"))
+            data.production_reactive_power = _sum_channels(channels, "reactivePower", reading)
+            data.production_apparent_power = _sum_channels(channels, "apparentPower", reading)
+            data.production_power_factor = _power_factor(reading)
+            # Add reactive/apparent power to the production phases.
+            for phase, chan in zip(data.production_phases, channels):
+                extra = _meter_phase(chan)
+                phase.reactive_power = extra.reactive_power
+                phase.apparent_power = extra.apparent_power
+                phase.power_factor = extra.power_factor
 
 
 class EnvoyClient:

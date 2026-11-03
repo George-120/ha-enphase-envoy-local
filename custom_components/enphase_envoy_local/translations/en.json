@@ -261,6 +261,84 @@
       },
       "forecast_performance": {
         "name": "Production vs. forecast"
+      },
+      "grid_voltage_max_today": {
+        "name": "Highest grid voltage today"
+      },
+      "grid_voltage_min_today": {
+        "name": "Lowest grid voltage today"
+      },
+      "grid_voltage_max_time": {
+        "name": "Highest grid voltage at"
+      },
+      "minutes_above_250v_today": {
+        "name": "Time above 250 V today"
+      },
+      "peak_power_today": {
+        "name": "Peak production today"
+      },
+      "peak_power_time": {
+        "name": "Peak production at"
+      },
+      "frequency_min_today": {
+        "name": "Lowest grid frequency today"
+      },
+      "frequency_max_today": {
+        "name": "Highest grid frequency today"
+      },
+      "grid_reactive_power": {
+        "name": "Grid reactive power"
+      },
+      "grid_apparent_power": {
+        "name": "Grid apparent power"
+      },
+      "production_reactive_power": {
+        "name": "Production reactive power"
+      },
+      "production_apparent_power": {
+        "name": "Production apparent power"
+      },
+      "production_power_factor": {
+        "name": "Production power factor"
+      },
+      "phase_imbalance": {
+        "name": "Phase imbalance"
+      },
+      "inverters_dc_power": {
+        "name": "DC power of all panels"
+      },
+      "conversion_losses": {
+        "name": "Conversion losses"
+      },
+      "fleet_efficiency": {
+        "name": "Microinverter efficiency"
+      },
+      "inverter_temperature_avg": {
+        "name": "Microinverter temperature average"
+      },
+      "inverter_temperature_max": {
+        "name": "Microinverter temperature highest"
+      },
+      "oldest_inverter_report": {
+        "name": "Oldest microinverter report"
+      },
+      "response_time": {
+        "name": "Gateway response time"
+      },
+      "grid_phase_voltage": {
+        "name": "Grid voltage {phase}"
+      },
+      "grid_phase_current": {
+        "name": "Grid current {phase}"
+      },
+      "grid_phase_power_factor": {
+        "name": "Grid power factor {phase}"
+      },
+      "grid_phase_reactive_power": {
+        "name": "Grid reactive power {phase}"
+      },
+      "grid_phase_apparent_power": {
+        "name": "Grid apparent power {phase}"
       }
     },
     "binary_sensor": {

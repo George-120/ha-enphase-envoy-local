@@ -387,3 +387,21 @@ def test_night_noise_on_production_ct_is_zero():
     data = api.parse_production(prod)
     assert data.production_power == 0.0
     assert data.production_phases[0].power == 0.0
+
+
+def test_meter_channels_give_grid_phases():
+    meters = [
+        {"eid": 1, "state": "enabled", "measurementType": "production"},
+        {"eid": 2, "state": "enabled", "measurementType": "net-consumption"},
+    ]
+    chan = lambda p, s, q, v, a: {"activePower": p, "apparentPower": s, "reactivePower": q, "voltage": v, "current": a}
+    readings = [
+        {"eid": 1, "channels": [chan(1000, 1010, -20, 236.0, 4.3), chan(900, 905, -10, 237.0, 3.8), chan(950, 960, -12, 235.5, 4.1)]},
+        {"eid": 2, "channels": [chan(93.1, 238.2, -208.1, 235.4, 1.0), chan(6.1, 131.5, -123.8, 237.4, 0.55), chan(4.7, 110.4, -107.3, 234.9, 0.47)]},
+    ]
+    data = api.parse_production(PRODUCTION_METERED, None, None, meters, readings)
+    assert [p.voltage for p in data.grid_phases] == [235.4, 237.4, 234.9]
+    assert data.grid_phases[0].power_factor == pytest.approx(0.391, abs=0.001)
+    assert data.grid_reactive_power == pytest.approx(-439.2)
+    assert data.grid_apparent_power == pytest.approx(480.1)
+    assert data.production_apparent_power == pytest.approx(2875.0)

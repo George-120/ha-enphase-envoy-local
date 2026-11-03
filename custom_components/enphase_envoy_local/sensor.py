@@ -15,6 +15,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     PERCENTAGE,
+    UnitOfApparentPower,
+    UnitOfReactivePower,
+    UnitOfTime,
     EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
@@ -249,6 +252,48 @@ PHASE_SENSORS: tuple[PhaseSensorDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
     _phase(
+        "grid_phase_voltage",
+        lambda d: d.grid_phases,
+        lambda p: p.voltage,
+        UnitOfElectricPotential.VOLT,
+        SensorDeviceClass.VOLTAGE,
+        1,
+    ),
+    _phase(
+        "grid_phase_current",
+        lambda d: d.grid_phases,
+        lambda p: p.current,
+        UnitOfElectricCurrent.AMPERE,
+        SensorDeviceClass.CURRENT,
+        2,
+    ),
+    _phase(
+        "grid_phase_power_factor",
+        lambda d: d.grid_phases,
+        lambda p: p.power_factor,
+        None,
+        SensorDeviceClass.POWER_FACTOR,
+        2,
+    ),
+    _phase(
+        "grid_phase_reactive_power",
+        lambda d: d.grid_phases,
+        lambda p: p.reactive_power,
+        UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        SensorDeviceClass.REACTIVE_POWER,
+        0,
+        entity_registry_enabled_default=False,
+    ),
+    _phase(
+        "grid_phase_apparent_power",
+        lambda d: d.grid_phases,
+        lambda p: p.apparent_power,
+        UnitOfApparentPower.VOLT_AMPERE,
+        SensorDeviceClass.APPARENT_POWER,
+        0,
+        entity_registry_enabled_default=False,
+    ),
+    _phase(
         "net_phase_power",
         lambda d: d.net_phases,
         lambda p: p.power,
@@ -467,6 +512,234 @@ INVERTER_SENSORS: tuple[InverterSensorDescription, ...] = (
     ),
 )
 
+def _inverters_with_dc(d: EnvoyData) -> list[InverterData]:
+    return [i for i in d.inverters.values() if i.dc_power is not None and i.power is not None]
+
+
+def _dc_total(d: EnvoyData) -> float | None:
+    invs = _inverters_with_dc(d)
+    return round(sum(i.dc_power for i in invs), 0) if invs else None
+
+
+def _losses(d: EnvoyData) -> float | None:
+    invs = _inverters_with_dc(d)
+    if not invs:
+        return None
+    return round(max(0.0, sum(i.dc_power - i.power for i in invs if i.dc_power >= 10)), 1)
+
+
+def _fleet_efficiency(d: EnvoyData) -> float | None:
+    invs = [i for i in _inverters_with_dc(d) if i.dc_power >= 10]
+    dc = sum(i.dc_power for i in invs)
+    if dc < 50:
+        return None
+    return round(min(100.0, sum(i.power for i in invs) / dc * 100), 1)
+
+
+def _temps(d: EnvoyData) -> list[float]:
+    return [i.temperature for i in d.inverters.values() if i.temperature is not None]
+
+
+def _oldest_report(d: EnvoyData) -> float | None:
+    times = [i.last_report for i in d.inverters.values() if i.last_report]
+    if not times:
+        return None
+    return round((datetime.now(tz=min(times).tzinfo) - min(times)).total_seconds() / 60, 1)
+
+
+def _imbalance(d: EnvoyData) -> float | None:
+    currents = [p.current for p in d.grid_phases if p.current is not None]
+    return round(max(currents) - min(currents), 2) if len(currents) >= 2 else None
+
+
+def _volt(key: str, value_fn: ValueFn, **kw) -> EnvoySensorDescription:
+    return EnvoySensorDescription(
+        key=key,
+        translation_key=key,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=value_fn,
+        exists_fn=lambda d: bool(d.grid_phases or d.production_phases),
+        **kw,
+    )
+
+
+# For the curious: everything the meters and microinverters tell us.
+NERD_SENSORS: tuple[EnvoySensorDescription, ...] = (
+    _volt("grid_voltage_max_today", lambda d: d.grid_voltage_max_today),
+    _volt("grid_voltage_min_today", lambda d: d.grid_voltage_min_today),
+    EnvoySensorDescription(
+        key="grid_voltage_max_time",
+        translation_key="grid_voltage_max_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.grid_voltage_max_time,
+        exists_fn=lambda d: bool(d.grid_phases or d.production_phases),
+    ),
+    EnvoySensorDescription(
+        key="minutes_above_250v_today",
+        translation_key="minutes_above_250v_today",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: d.minutes_above_250v_today,
+        exists_fn=lambda d: bool(d.grid_phases or d.production_phases),
+    ),
+    _power("peak_power_today", lambda d: d.peak_power_today),
+    EnvoySensorDescription(
+        key="peak_power_time",
+        translation_key="peak_power_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda d: d.peak_power_time,
+        exists_fn=lambda d: d.production_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="frequency_min_today",
+        translation_key="frequency_min_today",
+        native_unit_of_measurement=UnitOfFrequency.HERTZ,
+        device_class=SensorDeviceClass.FREQUENCY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.frequency_min_today,
+        exists_fn=lambda d: d.frequency is not None,
+    ),
+    EnvoySensorDescription(
+        key="frequency_max_today",
+        translation_key="frequency_max_today",
+        native_unit_of_measurement=UnitOfFrequency.HERTZ,
+        device_class=SensorDeviceClass.FREQUENCY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.frequency_max_today,
+        exists_fn=lambda d: d.frequency is not None,
+    ),
+    EnvoySensorDescription(
+        key="grid_reactive_power",
+        translation_key="grid_reactive_power",
+        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        device_class=SensorDeviceClass.REACTIVE_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: d.grid_reactive_power,
+        exists_fn=lambda d: d.grid_reactive_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="grid_apparent_power",
+        translation_key="grid_apparent_power",
+        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        device_class=SensorDeviceClass.APPARENT_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: d.grid_apparent_power,
+        exists_fn=lambda d: d.grid_apparent_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="production_reactive_power",
+        translation_key="production_reactive_power",
+        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        device_class=SensorDeviceClass.REACTIVE_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: d.production_reactive_power,
+        exists_fn=lambda d: d.production_reactive_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="production_apparent_power",
+        translation_key="production_apparent_power",
+        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        device_class=SensorDeviceClass.APPARENT_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: d.production_apparent_power,
+        exists_fn=lambda d: d.production_apparent_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="production_power_factor",
+        translation_key="production_power_factor",
+        device_class=SensorDeviceClass.POWER_FACTOR,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: d.production_power_factor,
+        exists_fn=lambda d: d.production_apparent_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="phase_imbalance",
+        translation_key="phase_imbalance",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=_imbalance,
+        exists_fn=lambda d: len(d.grid_phases) >= 2,
+    ),
+    _power("inverters_dc_power", _dc_total),
+    EnvoySensorDescription(
+        key="conversion_losses",
+        translation_key="conversion_losses",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_losses,
+        exists_fn=lambda d: bool(_inverters_with_dc(d)),
+    ),
+    EnvoySensorDescription(
+        key="fleet_efficiency",
+        translation_key="fleet_efficiency",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=_fleet_efficiency,
+        exists_fn=lambda d: bool(_inverters_with_dc(d)),
+    ),
+    EnvoySensorDescription(
+        key="inverter_temperature_avg",
+        translation_key="inverter_temperature_avg",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda d: round(sum(_temps(d)) / len(_temps(d)), 1) if _temps(d) else None,
+        exists_fn=lambda d: bool(_temps(d)),
+    ),
+    EnvoySensorDescription(
+        key="inverter_temperature_max",
+        translation_key="inverter_temperature_max",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: max(_temps(d)) if _temps(d) else None,
+        exists_fn=lambda d: bool(_temps(d)),
+    ),
+    EnvoySensorDescription(
+        key="oldest_inverter_report",
+        translation_key="oldest_inverter_report",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_oldest_report,
+        exists_fn=lambda d: bool(d.inverters),
+    ),
+    EnvoySensorDescription(
+        key="response_time",
+        translation_key="response_time",
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.response_time,
+    ),
+)
+
 NETWORK_SENSORS: tuple[EnvoySensorDescription, ...] = (
     EnvoySensorDescription(
         key="last_cloud_report",
@@ -509,7 +782,7 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
     skipped: list[str] = []
-    for desc in (*SENSORS, *NETWORK_SENSORS):
+    for desc in (*SENSORS, *NETWORK_SENSORS, *NERD_SENSORS):
         if desc.exists_fn is None or desc.exists_fn(data):
             entities.append(EnvoySensor(coordinator, desc))
         else:
@@ -697,6 +970,13 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                         and entity(serial, "binary_sensor", "inverter_underperforming"),
                         "no_output": serial
                         and entity(serial, "binary_sensor", "inverter_no_output"),
+                        "dc_voltage": serial and entity(serial, "sensor", "inverter_dc_voltage"),
+                        "dc_current": serial and entity(serial, "sensor", "inverter_dc_current"),
+                        "ac_voltage": serial and entity(serial, "sensor", "inverter_ac_voltage"),
+                        "last_report": serial and entity(serial, "sensor", "inverter_last_report"),
+                        "lifetime": serial and entity(serial, "sensor", "inverter_energy_lifetime"),
+                        "signal": serial and entity(serial, "sensor", "inverter_signal"),
+                        "firmware": inv.firmware if inv else None,
                     }
                 )
             arrays.append(
@@ -728,6 +1008,27 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
             "forecast_power_now": "sensor",
             "forecast_performance": "sensor",
         }
+        gateway_keys.update(
+            {
+                key: "sensor"
+                for key in (
+                    "grid_voltage_max_today", "grid_voltage_min_today", "minutes_above_250v_today",
+                    "peak_power_today", "peak_power_time", "grid_voltage_max_time", "frequency", "power_factor",
+                    "frequency_min_today", "frequency_max_today",
+                    "grid_reactive_power", "grid_apparent_power", "phase_imbalance",
+                    "inverters_dc_power", "conversion_losses", "fleet_efficiency",
+                    "inverter_temperature_avg", "inverter_temperature_max", "oldest_inverter_report",
+                    "grid_import_lifetime", "grid_export_lifetime", "consumption_lifetime",
+                )
+            }
+        )
+        for key in (
+            "grid_phase_voltage", "grid_phase_current", "grid_phase_power_factor",
+            "net_phase_power", "production_phase_power", "consumption_phase_power",
+            "production_phase_voltage",
+        ):
+            for phase in PHASE_NAMES:
+                gateway_keys[f"{key}_{phase.lower()}"] = "sensor"
         gateway = {
             key: registry.async_get_entity_id(platform, DOMAIN, f"{self._serial}_{key}")
             for key, platform in gateway_keys.items()

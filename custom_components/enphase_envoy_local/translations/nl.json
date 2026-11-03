@@ -261,6 +261,84 @@
       },
       "forecast_performance": {
         "name": "Opbrengst t.o.v. verwachting"
+      },
+      "grid_voltage_max_today": {
+        "name": "Hoogste netspanning vandaag"
+      },
+      "grid_voltage_min_today": {
+        "name": "Laagste netspanning vandaag"
+      },
+      "grid_voltage_max_time": {
+        "name": "Hoogste netspanning om"
+      },
+      "minutes_above_250v_today": {
+        "name": "Tijd boven 250 V vandaag"
+      },
+      "peak_power_today": {
+        "name": "Piekproductie vandaag"
+      },
+      "peak_power_time": {
+        "name": "Piekproductie om"
+      },
+      "frequency_min_today": {
+        "name": "Laagste netfrequentie vandaag"
+      },
+      "frequency_max_today": {
+        "name": "Hoogste netfrequentie vandaag"
+      },
+      "grid_reactive_power": {
+        "name": "Blindvermogen net"
+      },
+      "grid_apparent_power": {
+        "name": "Schijnbaar vermogen net"
+      },
+      "production_reactive_power": {
+        "name": "Blindvermogen productie"
+      },
+      "production_apparent_power": {
+        "name": "Schijnbaar vermogen productie"
+      },
+      "production_power_factor": {
+        "name": "Arbeidsfactor productie"
+      },
+      "phase_imbalance": {
+        "name": "Fase-onbalans"
+      },
+      "inverters_dc_power": {
+        "name": "DC-vermogen alle panelen"
+      },
+      "conversion_losses": {
+        "name": "Omzettingsverlies"
+      },
+      "fleet_efficiency": {
+        "name": "Rendement micro-omvormers"
+      },
+      "inverter_temperature_avg": {
+        "name": "Temperatuur omvormers gemiddeld"
+      },
+      "inverter_temperature_max": {
+        "name": "Temperatuur omvormers hoogste"
+      },
+      "oldest_inverter_report": {
+        "name": "Oudste omvormermelding"
+      },
+      "response_time": {
+        "name": "Reactietijd gateway"
+      },
+      "grid_phase_voltage": {
+        "name": "Netspanning {phase}"
+      },
+      "grid_phase_current": {
+        "name": "Netstroom {phase}"
+      },
+      "grid_phase_power_factor": {
+        "name": "Arbeidsfactor net {phase}"
+      },
+      "grid_phase_reactive_power": {
+        "name": "Blindvermogen net {phase}"
+      },
+      "grid_phase_apparent_power": {
+        "name": "Schijnbaar vermogen net {phase}"
       }
     },
     "binary_sensor": {

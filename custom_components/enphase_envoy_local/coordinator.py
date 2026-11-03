@@ -210,6 +210,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         """Fetch data from the gateway."""
         await self._async_ensure_token()
         try:
+            started = dt_util.utcnow()
             try:
                 production = await self.client.async_get_production()
             except EnvoyAuthError:
@@ -289,6 +290,8 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         )
         data.production_forced_off = self._last_power_mode
         self._apply_daily(data)
+        self._track_extremes(data)
+        data.response_time = round((dt_util.utcnow() - started).total_seconds() * 1000, 0)
         if self.inverter_sensors and data.inverters:
             apply_health(
                 data,
@@ -508,6 +511,50 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         self._inventory_read = dt_util.utcnow()
         if inventory is not None:
             self.inverter_details = inventory
+
+    def _track_extremes(self, data: EnvoyData) -> None:
+        """Peak production, highest/lowest grid voltage and frequency of today."""
+        now = dt_util.utcnow()
+        ext: dict = self._daily.setdefault("ext", {})
+        changed = False
+
+        def keep(key: str, value: float | None, better) -> None:
+            nonlocal changed
+            if value is None:
+                return
+            old = ext.get(key)
+            if old is None or better(value, old[0]):
+                ext[key] = [round(value, 2), now.isoformat()]
+                changed = True
+
+        keep("peak", data.production_power, lambda new, old: new > old)
+        volts = [p.voltage for p in data.grid_phases or data.production_phases if p.voltage]
+        if volts:
+            keep("vmax", max(volts), lambda new, old: new > old)
+            keep("vmin", min(volts), lambda new, old: new < old)
+            # Inverters disconnect at 253 V; time spent above 250 V is the warning sign.
+            last = ext.get("tick")
+            if last and max(volts) > 250:
+                elapsed = (now - dt_util.parse_datetime(last)).total_seconds()
+                if 0 < elapsed < 600:
+                    ext["above"] = round(ext.get("above", 0) + elapsed / 60, 2)
+                    changed = True
+            ext["tick"] = now.isoformat()
+        keep("fmin", data.frequency, lambda new, old: new < old)
+        keep("fmax", data.frequency, lambda new, old: new > old)
+
+        def val(key: str) -> tuple[float | None, datetime | None]:
+            item = ext.get(key)
+            return (item[0], dt_util.parse_datetime(item[1])) if item else (None, None)
+
+        data.peak_power_today, data.peak_power_time = val("peak")
+        data.grid_voltage_max_today, data.grid_voltage_max_time = val("vmax")
+        data.grid_voltage_min_today, data.grid_voltage_min_time = val("vmin")
+        data.frequency_min_today = val("fmin")[0]
+        data.frequency_max_today = val("fmax")[0]
+        data.minutes_above_250v_today = round(ext.get("above", 0), 1) if volts or ext.get("above") else None
+        if changed:
+            self._store.async_delay_save(lambda: self._daily, 60)
 
     def _apply_daily(self, data: EnvoyData) -> None:
         """Fill in 'today' from the lifetime counters, reset at local midnight.
