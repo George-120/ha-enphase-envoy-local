@@ -52,6 +52,8 @@ STORAGE_VERSION = 1
 METER_RETRY = timedelta(minutes=15)
 INVENTORY_INTERVAL = timedelta(minutes=15)
 SLOW_INTERVAL = timedelta(minutes=5)
+SEED_VERSION = 2  # bump to take the start of today from the recorder again
+FREQ_RANGE = (49.0, 51.0)  # outside this a reading is a glitch, not the grid
 LAYOUT_MAX_AGE = timedelta(days=7)
 
 # (name, lifetime attribute, today attribute) of the counters that get a
@@ -552,8 +554,12 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     ext["above"] = round(ext.get("above", 0) + elapsed / 60, 2)
                     changed = True
             ext["tick"] = now.isoformat()
-        keep("fmin", data.frequency, lambda new, old: new < old)
-        keep("fmax", data.frequency, lambda new, old: new > old)
+        freq = data.frequency if data.frequency and FREQ_RANGE[0] <= data.frequency <= FREQ_RANGE[1] else None
+        keep("fmin", freq, lambda new, old: new < old)
+        keep("fmax", freq, lambda new, old: new > old)
+        for key in ("fmin", "fmax"):  # drop glitches kept by older versions
+            if ext.get(key) and not FREQ_RANGE[0] <= ext[key][0] <= FREQ_RANGE[1]:
+                ext.pop(key)
 
         def val(key: str) -> tuple[float | None, datetime | None]:
             item = ext.get(key)
@@ -602,7 +608,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             setattr(data, today_attr, round(lifetime - start, 3))
         if changed:
             self._store.async_delay_save(lambda: self._daily, 30)
-        if self._daily.get("seeded") != today and not self._seeding:
+        if self._daily.get("seeded") != f"{today}/{SEED_VERSION}" and not self._seeding:
             self._seeding = True
             self.config_entry.async_create_background_task(
                 self.hass, self._async_seed_today(today), "enphase_envoy_local seed today"
@@ -622,7 +628,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         finally:
             self._seeding = False
             if self._daily.get("date") == today:
-                self._daily["seeded"] = today
+                self._daily["seeded"] = f"{today}/{SEED_VERSION}"
                 self._store.async_delay_save(lambda: self._daily, 5)
 
     async def _async_seed(self, today: str) -> None:
@@ -690,7 +696,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             best = None
             for row in stats.get(entity_id, []) if entity_id else []:
                 value = row.get(kind)
-                if value is None:
+                if value is None or (key.startswith("f") and not FREQ_RANGE[0] <= value <= FREQ_RANGE[1]):
                     continue
                 if best is None or pick(value, best[0]) == value and value != best[0]:
                     start = row["start"]
