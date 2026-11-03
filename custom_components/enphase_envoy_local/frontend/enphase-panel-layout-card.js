@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.12.1";
+const CARD_VERSION = "1.13.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -157,6 +157,14 @@ const ICONS = {
 // Other W sensors of a microinverter that are not its AC power.
 const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max)/i;
 
+// Fixed card height chosen in the editor (px); empty = as high as the content.
+function applyHeight(el, config) {
+  const h = Number(config?.height);
+  el.toggleAttribute("fixed", h > 0);
+  if (h > 0) el.style.setProperty("--card-h", `${h}px`);
+  else el.style.removeProperty("--card-h");
+}
+
 function findLayoutEntity(hass) {
   return Object.keys(hass.states).find(
     (id) =>
@@ -200,6 +208,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
       ...config,
     };
     if (!SIZES[this._config.size]) this._config.size = "medium";
+    applyHeight(this, this._config);
+    // A fixed height: the roof gets what is left below the header.
+    if (Number(this._config.height) > 0 && !config.max_height)
+      this._config.max_height = `${Math.max(120, Number(this._config.height) - 260)}px`;
     this.toggleAttribute("small", this._config.size === "small");
     this._mode = MODES.includes(this._config.mode) ? this._config.mode : "power";
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
@@ -254,6 +266,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
             { name: "max_height", selector: { text: {} } },
           ],
         },
+        { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } },
       ],
       computeLabel: (s) =>
         ({
@@ -261,6 +274,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
           entity: "Panel layout sensor / Paneelindeling-sensor",
           mode: "Start view / Startweergave",
           size: "Size / Grootte",
+          height: "Height / Hoogte (empty = automatic / leeg = automatisch)",
           show_toolbar: "Buttons and replay / Knoppen en afspelen",
           show_labels: "Roof names / Dakvlaknamen",
           show_phase: "Phase badges / Fase-labels",
@@ -1497,6 +1511,7 @@ function fmtEnergy(wh, unit) {
 class EnphaseSystemCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
+    applyHeight(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
   }
@@ -1510,8 +1525,8 @@ class EnphaseSystemCard extends HTMLElement {
       schema: [
         { name: "title", selector: { text: {} } },
         { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
-      ],
-      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor" })[s.name],
+      , { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -1927,6 +1942,7 @@ const FT = {
 class EnphaseForecastCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
+    applyHeight(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._day = 0; // -1 yesterday, 0 today, 1 tomorrow, 2 day after
     this._built = false;
@@ -1939,8 +1955,8 @@ class EnphaseForecastCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }],
-      computeLabel: (s) => ({ title: "Title / Titel" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -2335,6 +2351,7 @@ const XT = {
 class EnphaseBaseCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
+    applyHeight(this, this._config);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
   }
@@ -2345,8 +2362,8 @@ class EnphaseBaseCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }],
-      computeLabel: (s) => ({ title: "Title / Titel" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -3039,6 +3056,10 @@ const GLASS = `
     --g-shine: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.05);
     --g-blur: blur(22px) saturate(175%);
   }
+  :host { display: block; height: 100%; }
+  :host([fixed]) { height: auto; }
+  ha-card { display: block; height: 100%; box-sizing: border-box; }
+  :host([fixed]) ha-card { height: var(--card-h); overflow-y: auto; scrollbar-width: thin; }
   ha-card {
     position: relative; isolation: isolate; border-radius: 26px;
     background: var(--g-fill), color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #1c1c1c)) 70%, transparent);
