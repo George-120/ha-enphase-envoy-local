@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.12.0";
+const CARD_VERSION = "1.12.1";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -2158,7 +2158,8 @@ class EnphaseForecastCard extends HTMLElement {
     q(".pct-fig").style.display = pctText ? "" : "none";
 
     // Chart window: from an hour before the first sun to an hour after the last.
-    const sunny = expDay.filter(([, v]) => v > 1).map(([t]) => t).concat(actDay.filter(([, v]) => v > 1).map(([t]) => t));
+    // Real production only (the CTs show a few watts of noise at night).
+    const sunny = expDay.filter(([, v]) => v > 20).map(([t]) => t).concat(actDay.filter(([, v]) => v > 20).map(([t]) => t));
     const x0 = sunny.length ? Math.min(...sunny) - 2 * 3600000 : from + 6 * 3600000;
     const x1 = sunny.length ? Math.max(...sunny) + 3600000 : from + 20 * 3600000;
     const peak = Math.max(50, ...expDay.map(([, v]) => v), ...actDay.map(([, v]) => v)) * 1.12;
@@ -2648,7 +2649,7 @@ class EnphaseInvertersCard extends EnphaseBaseCard {
     const ago = (m) => (m == null ? "–" : m < 1 ? this._t("now") : `${Math.round(m)} ${this._t("minutes")}`);
     q("tbody").innerHTML = rows
       .map((r) => `
-        <tr class="${r.problem ? "problem" : ""}" data-e="${esc(r.m.power || "")}">
+        <tr class="${r.problem ? "problem" : ""} ${(r.ac || 0) > 0 ? "" : "idle"}" data-e="${esc(r.m.power || "")}">
           <td class="panel"><b>…${esc(r.serial.slice(-4))}</b><small>${esc(r.label)}</small></td>
           <td>${r.phase ? `<span class="pchip" style="background:${PHASE_COLORS[r.phase] || "#616161"}">${esc(r.phase)}</span>` : "–"}</td>
           <td class="bar"><i style="width:${((r.ac || 0) / maxAc) * 100}%"></i><b>${fmt(r.ac)}</b></td>
@@ -2709,6 +2710,8 @@ const INV_STYLE = `
   td.bar.today i { background: linear-gradient(90deg, rgba(255,193,7,.05), rgba(255,193,7,.3)); }
   td.bar b { position: relative; font-weight: 600; }
   td.dim { color: var(--secondary-text-color); }
+  tr.idle td { opacity: .55; }
+  tr.idle td.low { color: inherit; font-weight: inherit; }
   td.low { color: var(--error-color, #e53935); font-weight: 600; }
   td.mid { color: #ffa726; }
   td.ok { color: #66bb6a; }
@@ -2973,7 +2976,7 @@ const ENERGY_STYLE = `
   .figs .cap { margin: 0; }
   .figs b.up { color: #66bb6a; }
   .figs b.down { color: #ef5350; }
-  .cal { display:grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal { display:grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; container-type: inline-size; }
   .cal .wd { text-align:center; font-size:.68rem; text-transform: uppercase; color: var(--secondary-text-color); }
   .cell { position: relative; aspect-ratio: 1.45; border-radius: 12px; padding: 4px 6px; display:flex; flex-direction:column; justify-content:space-between;
           background: linear-gradient(160deg, rgba(255,193,7, calc(var(--l) * .85)), rgba(255,140,0, calc(var(--l) * .55)));
@@ -2982,8 +2985,9 @@ const ENERGY_STYLE = `
   .cell.future { opacity: .25; background: rgba(127,127,127,.08); }
   .cell.today { border-color: rgba(var(--sun), .9); }
   .cell i { font-style: normal; font-size: .65rem; opacity: .75; }
-  .cell b { font-size: .78rem; font-variant-numeric: tabular-nums; align-self: flex-end; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
-  .ybars { display:grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: end; height: 190px; }
+  .cell { min-width: 0; overflow: hidden; }
+  .cell b { font-size: clamp(.6rem, 2.2cqw, .78rem); font-variant-numeric: tabular-nums; align-self: flex-end; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .ybars { display:grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; align-items: end; height: 190px; }
   .mb { display:flex; flex-direction:column; align-items:center; gap: 3px; height: 100%; justify-content: flex-end; }
   .mb .bars { position: relative; width: 100%; flex: 1; display:flex; align-items:flex-end; justify-content:center; gap: 2px; }
   .mb .bars i { display:block; width: 42%; border-radius: 6px 6px 3px 3px; transition: height .8s ease; }

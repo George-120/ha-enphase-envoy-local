@@ -513,7 +513,11 @@ INVERTER_SENSORS: tuple[InverterSensorDescription, ...] = (
 )
 
 def _inverters_with_dc(d: EnvoyData) -> list[InverterData]:
-    return [i for i in d.inverters.values() if i.dc_power is not None and i.power is not None]
+    # Only microinverters that produce now: at night the last reports are stale.
+    return [
+        i for i in d.inverters.values()
+        if i.dc_power is not None and i.power is not None and i.power > 0
+    ]
 
 
 def _dc_total(d: EnvoyData) -> float | None:
@@ -524,7 +528,7 @@ def _dc_total(d: EnvoyData) -> float | None:
 def _losses(d: EnvoyData) -> float | None:
     invs = _inverters_with_dc(d)
     if not invs:
-        return None
+        return 0.0 if d.inverters else None
     return round(max(0.0, sum(i.dc_power - i.power for i in invs if i.dc_power >= 10)), 1)
 
 
@@ -677,7 +681,16 @@ NERD_SENSORS: tuple[EnvoySensorDescription, ...] = (
         value_fn=_imbalance,
         exists_fn=lambda d: len(d.grid_phases) >= 2,
     ),
-    _power("inverters_dc_power", _dc_total),
+    EnvoySensorDescription(
+        key="inverters_dc_power",
+        translation_key="inverters_dc_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: _dc_total(d) if _inverters_with_dc(d) else (0.0 if d.inverters else None),
+        exists_fn=lambda d: any(i.dc_voltage is not None for i in d.inverters.values()),
+    ),
     EnvoySensorDescription(
         key="conversion_losses",
         translation_key="conversion_losses",
@@ -686,7 +699,7 @@ NERD_SENSORS: tuple[EnvoySensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=_losses,
-        exists_fn=lambda d: bool(_inverters_with_dc(d)),
+        exists_fn=lambda d: any(i.dc_voltage is not None for i in d.inverters.values()),
     ),
     EnvoySensorDescription(
         key="fleet_efficiency",
@@ -695,7 +708,7 @@ NERD_SENSORS: tuple[EnvoySensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=_fleet_efficiency,
-        exists_fn=lambda d: bool(_inverters_with_dc(d)),
+        exists_fn=lambda d: any(i.dc_voltage is not None for i in d.inverters.values()),
     ),
     EnvoySensorDescription(
         key="inverter_temperature_avg",

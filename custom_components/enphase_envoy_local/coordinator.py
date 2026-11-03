@@ -305,20 +305,28 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         return data
 
     def _remember_efficiency(self, data: EnvoyData) -> None:
-        """Keep each panel's daylight efficiency for the hours without sun."""
+        """Keep each panel's efficiency of the day for the hours without sun.
+
+        The value kept is the energy-weighted average of today (AC over DC in
+        good light), not the last reading at dusk, which is low and misleading.
+        """
         saved: dict[str, float] = self._daily.setdefault("efficiency", {})
+        sums: dict[str, list[float]] = self._daily.setdefault("effsum", {})
         changed = False
         for serial, inv in data.inverters.items():
             live = inv.efficiency
-            if live is not None:
-                if saved.get(serial) != live:
-                    saved[serial] = live
+            dc = inv.dc_power
+            if live is not None and dc is not None and dc >= 30 and inv.power is not None:
+                acc = sums.setdefault(serial, [0.0, 0.0])
+                acc[0] += inv.power
+                acc[1] += dc
+                average = round(min(100.0, acc[0] / acc[1] * 100), 1)
+                if saved.get(serial) != average:
+                    saved[serial] = average
                     changed = True
-                inv.last_efficiency = live
-            else:
-                inv.last_efficiency = saved.get(serial)
+            inv.last_efficiency = live if live is not None else saved.get(serial)
         if changed:
-            self._store.async_delay_save(lambda: self._daily, 30)
+            self._store.async_delay_save(lambda: self._daily, 60)
 
     def _update_issues(self, data: EnvoyData) -> None:
         """Raise or clear repair issues (Settings > Repairs) for lasting problems."""
