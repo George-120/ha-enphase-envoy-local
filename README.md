@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/logo.png" alt="Enphase Envoy Local" width="480">
+  <img src="https://raw.githubusercontent.com/George-120/ha-enphase-envoy-local/main/images/logo.png" alt="Enphase Envoy Local" width="480">
 </p>
 
 <p align="center">
