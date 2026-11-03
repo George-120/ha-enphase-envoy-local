@@ -21,6 +21,27 @@
 
 ---
 
+> 🇳🇱 **Je Enphase-zonnepanelen helemaal lokaal in Home Assistant.** De integratie leest je Enphase IQ Gateway
+> (Envoy) rechtstreeks in je eigen netwerk uit, elke 10 seconden en zonder cloud. Ze **haalt de paneelindeling
+> automatisch uit Enphase Enlighten**, zodat elk paneel op zijn echte plek op het dak staat, met live vermogen,
+> temperatuur, rendement en gezondheid per paneel. Daarbij: een eigen, op jouw panelen geleerde
+> **opbrengstverwachting**, het **Energiedashboard**, netspanning en arbeidsfactor per fase, meldingen bij een
+> slecht paneel en negen kaarten. Geen plattegrond in Enlighten? Dan leg je de panelen zelf neer.
+>
+> 🇬🇧 **Your Enphase solar panels fully local in Home Assistant.** The integration reads your Enphase IQ Gateway
+> (Envoy) directly on your own network, every 10 seconds and without the cloud. It **fetches the panel layout
+> automatically from Enphase Enlighten**, so every panel is in its real place on the roof, with live power,
+> temperature, efficiency and health per panel. On top of that: its own **solar forecast** learned from your
+> panels, the **Energy dashboard**, grid voltage and power factor per phase, alerts for a bad panel and nine
+> cards. No layout in Enlighten? Arrange the panels yourself.
+>
+> 🇩🇪 **Deine Enphase-Solarmodule komplett lokal in Home Assistant.** Die Integration liest dein Enphase IQ Gateway
+> (Envoy) direkt in deinem Netzwerk aus, alle 10 Sekunden und ohne Cloud. Sie **holt die Modulanordnung
+> automatisch aus Enphase Enlighten**, sodass jedes Modul an seinem echten Platz auf dem Dach liegt, mit
+> Live-Leistung, Temperatur, Wirkungsgrad und Zustand je Modul. Dazu: eine eigene, an deinen Modulen gelernte
+> **Ertragsprognose**, das **Energie-Dashboard**, Netzspannung und Leistungsfaktor je Phase, Hinweise bei einem
+> schwachen Modul und neun Karten. Kein Plan in Enlighten? Dann ordnest du die Module selbst an.
+
 ## ☀️ The day on your roof · De dag op je dak · Der Tag auf deinem Dach
 
 ![A day on the panel layout card](images/panel-layout-day.gif)
