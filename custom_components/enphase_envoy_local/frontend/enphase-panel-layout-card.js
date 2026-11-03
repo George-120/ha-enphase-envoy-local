@@ -2425,7 +2425,7 @@ const XT = {
     oldest: "Oldest report", now: "now", total: "Lifetime",
     energy: "Production", month: "Month", year: "Year", records: "Records", best_day: "Best day",
     best_month: "Best month", this_year: "This year", last_year: "Last year", avg_day: "Average per day",
-    peak_today: "Peak today", lifetime: "Lifetime", days_with_sun: "days", no_stats: "No statistics yet.",
+    peak_today: "Peak today", lifetime: "Lifetime", since: "since", days_with_sun: "days", no_stats: "No statistics yet.",
     vs_last_year: "vs. last year", kwh: "kWh",
   },
   nl: {
@@ -2439,7 +2439,7 @@ const XT = {
     oldest: "Oudste melding", now: "nu", total: "Totaal",
     energy: "Opbrengst", month: "Maand", year: "Jaar", records: "Records", best_day: "Beste dag",
     best_month: "Beste maand", this_year: "Dit jaar", last_year: "Vorig jaar", avg_day: "Gemiddeld per dag",
-    peak_today: "Piek vandaag", lifetime: "Totaal ooit", days_with_sun: "dagen", no_stats: "Nog geen statistieken.",
+    peak_today: "Piek vandaag", lifetime: "Totaal ooit", since: "sinds", days_with_sun: "dagen", no_stats: "Nog geen statistieken.",
     vs_last_year: "t.o.v. vorig jaar", kwh: "kWh",
   },
   de: {
@@ -2453,7 +2453,7 @@ const XT = {
     oldest: "Älteste Meldung", now: "jetzt", total: "Gesamt",
     energy: "Erzeugung", month: "Monat", year: "Jahr", records: "Rekorde", best_day: "Bester Tag",
     best_month: "Bester Monat", this_year: "Dieses Jahr", last_year: "Letztes Jahr", avg_day: "Durchschnitt pro Tag",
-    peak_today: "Spitze heute", lifetime: "Gesamt seit Beginn", days_with_sun: "Tage", no_stats: "Noch keine Statistiken.",
+    peak_today: "Spitze heute", lifetime: "Gesamt seit Beginn", since: "seit", days_with_sun: "Tage", no_stats: "Noch keine Statistiken.",
     vs_last_year: "ggü. Vorjahr", kwh: "kWh",
   },
 };
@@ -3125,6 +3125,14 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
     const y = new Date().getFullYear();
     const yearTotal = entries.filter(([d]) => d.getFullYear() === y).reduce((a, [, v]) => a + v, 0);
     const lifetime = this._g("production_lifetime");
+    // The gateway's lifetime counter can have been reset (new meter, firmware):
+    // the recorded days then add up to more, so the larger one is shown.
+    const unitK = { MWh: 1000, kWh: 1, Wh: 0.001 }[this._gState("production_lifetime")?.attributes.unit_of_measurement] ?? 0.001;
+    const meter = lifetime == null ? 0 : lifetime * unitK;
+    const summed = entries.reduce((a, [, v]) => a + v, 0);
+    const fromDays = summed > meter * 1.02;
+    const total = Math.max(meter, summed);
+    const first = entries.length ? entries.reduce((a, e) => (e[0] < a ? e[0] : a), entries[0][0]) : null;
     const peak = this._g("peak_power_today");
     const peakTime = this._gState("peak_power_time")?.state;
     const sunny = entries.filter(([d, v]) => d.getFullYear() === y && v > 1).length;
@@ -3135,7 +3143,7 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
       ${rec("📅", this._t("best_month"), bestMonth ? `${fmt(bestMonth[1])} kWh` : "–", bestMonth ? esc(new Date(bmY, bmM, 1).toLocaleDateString(loc, { month: "long", year: "numeric" })) : "")}
       ${rec("📈", this._t("this_year"), `${fmt(yearTotal)} kWh`, `${sunny} ${esc(this._t("days_with_sun"))}`)}
       ${rec("⚡", this._t("peak_today"), peak == null ? "–" : `${fmt(peak)} W`, peakTime ? `${esc(this._t("at"))} ${this._time(peakTime)}` : "")}
-      ${rec("🏆", this._t("lifetime"), lifetime == null ? "–" : `${fmt(lifetime / (this._gState("production_lifetime")?.attributes.unit_of_measurement === "MWh" ? 1 : this._gState("production_lifetime")?.attributes.unit_of_measurement === "kWh" ? 1000 : 1e6), 2)} MWh`, "")}
+      ${rec("🏆", this._t("lifetime"), total ? `${fmt(total / 1000, 2)} MWh` : "–", fromDays && first ? `${esc(this._t("since"))} ${esc(first.toLocaleDateString(loc, { month: "long", year: "numeric" }))}` : "")}
     </div>`;
   }
 }
