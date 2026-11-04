@@ -52,7 +52,7 @@ STORAGE_VERSION = 1
 METER_RETRY = timedelta(minutes=15)
 INVENTORY_INTERVAL = timedelta(minutes=15)
 SLOW_INTERVAL = timedelta(minutes=5)
-SEED_VERSION = 3  # bump to take the start of today from the recorder again
+SEED_VERSION = 4  # bump to take the start of today from the recorder again
 FREQ_RANGE = (49.0, 51.0)  # outside this a reading is a glitch, not the grid
 LAYOUT_MAX_AGE = timedelta(days=7)
 
@@ -66,6 +66,13 @@ DAILY_COUNTERS = (
 )
 
 type EnvoyConfigEntry = ConfigEntry[EnvoyCoordinator]
+
+
+def _ts(value) -> float:
+    """Statistics row start as a UNIX timestamp (float seconds or datetime)."""
+    if isinstance(value, (int, float)):
+        return value / 1000 if value > 1e11 else float(value)
+    return value.timestamp() if value is not None else 0.0
 
 
 class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
@@ -693,21 +700,29 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     base[name] = number
 
         # Yesterday's totals from the daily statistics, when the day was not closed here.
-        if ids and not (self._daily.get("yesterday") or {}).get("production"):
+        if ids:
             days = await get_instance(self.hass).async_add_executor_job(
                 statistics_during_period,
                 self.hass, midnight - timedelta(days=1), midnight, set(ids), "day", None, {"change"},
             )
             closed: dict[str, float] = {}
             for name, entity_id in counters.items():
-                rows = days.get(entity_id) if entity_id else None
                 current = self.hass.states.get(entity_id) if entity_id else None
-                if not rows or current is None or rows[-1].get("change") is None:
+                # The answer also holds today's running row: take yesterday's exactly.
+                want = (midnight - timedelta(days=1)).timestamp()
+                row = next(
+                    (
+                        r for r in (days.get(entity_id) or [] if entity_id else [])
+                        if abs(_ts(r.get("start")) - want) < 1800
+                    ),
+                    None,
+                )
+                if row is None or current is None or row.get("change") is None:
                     continue
                 scale = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}.get(
                     current.attributes.get("unit_of_measurement"), 1.0
                 )
-                value = float(rows[-1]["change"]) * scale
+                value = float(row["change"]) * scale
                 if 0 <= value < 500_000:
                     closed[name] = round(value, 1)
             if closed:
