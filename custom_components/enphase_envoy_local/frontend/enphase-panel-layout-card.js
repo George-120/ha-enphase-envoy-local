@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.24.2";
+const CARD_VERSION = "1.25.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -4120,6 +4120,151 @@ const BEER_STYLE = `
   @media (prefers-reduced-motion: reduce) { .bub.on { animation-duration: 0s; } }
 `;
 
+/* ===================================================================
+ * Earnings card: what the panels saved and earned, in euro, with the
+ * day-ahead price of today.
+ *
+ *   type: custom:enphase-earnings-card
+ * =================================================================== */
+
+const EARN_T = {
+  en: { title: "Earnings", today: "Today", saved: "saved by self-use", exported: "export", month: "This month",
+        year: "This year", total: "Total", since: "since", price: "Price now", exportp: "Export price", perkwh: "per kWh",
+        payback: "Payback", years: "years", negative: "Exporting at a negative price: use the power yourself now",
+        noprices: "No day-ahead prices yet", prices: "Price today" },
+  nl: { title: "Opbrengst", today: "Vandaag", saved: "bespaard door eigen verbruik", exported: "teruglevering", month: "Deze maand",
+        year: "Dit jaar", total: "Totaal", since: "sinds", price: "Stroomprijs nu", exportp: "Terugleverprijs", perkwh: "per kWh",
+        payback: "Terugverdiend over", years: "jaar", negative: "Teruglevering bij negatieve prijs: gebruik de stroom nu zelf",
+        noprices: "Nog geen day-ahead prijzen", prices: "Prijs vandaag" },
+  de: { title: "Ertrag", today: "Heute", saved: "gespart durch Eigenverbrauch", exported: "Einspeisung", month: "Diesen Monat",
+        year: "Dieses Jahr", total: "Gesamt", since: "seit", price: "Strompreis jetzt", exportp: "Einspeisepreis", perkwh: "je kWh",
+        payback: "Amortisiert in", years: "Jahren", negative: "Einspeisung bei negativem Preis: nutze den Strom jetzt selbst",
+        noprices: "Noch keine Day-Ahead-Preise", prices: "Preis heute" },
+};
+
+class EnphaseEarningsCard extends EnphaseBaseCard {
+  getCardSize() {
+    return 5;
+  }
+
+  _e(key) {
+    return (EARN_T[(this._locale() || "en").slice(0, 2)] || EARN_T.en)[key] || EARN_T.en[key];
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._built) this._build();
+    this._update();
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `
+      <style>${SIZE_STYLE}${XSTYLE}${EARN_STYLE}${GLASS}${CLEAN}</style>
+      <ha-card>
+        <div class="top"><div class="title">${esc(this._config.title || this._e("title"))}</div><span class="pnow"></span></div>
+        <div class="alert" hidden>⚠ ${esc(this._e("negative"))}</div>
+        <button class="hero"><span class="cap">${esc(this._e("today"))}</span><b class="eur">–</b>
+          <span class="split"></span></button>
+        <div class="tiles">
+          <button class="tile t-month"><span>${esc(this._e("month"))}</span><b>–</b></button>
+          <button class="tile t-year"><span>${esc(this._e("year"))}</span><b>–</b><small></small></button>
+          <button class="tile t-total"><span>${esc(this._e("total"))}</span><b>–</b><small></small></button>
+        </div>
+        <div class="chart"><div class="cap">${esc(this._e("prices"))}</div><svg viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+          <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+        <div class="msg" hidden>${esc(this._e("noprices"))}</div>
+      </ha-card>`;
+    const gw = () => this._layout()?.attributes.gateway || {};
+    const q = (s) => this.shadowRoot.querySelector(s);
+    q(".hero").addEventListener("click", () => this._more(gw().earnings_today));
+    q(".t-month").addEventListener("click", () => this._more(gw().earnings_month));
+    q(".t-year").addEventListener("click", () => this._more(gw().earnings_year));
+    q(".t-total").addEventListener("click", () => this._more(gw().earnings_total));
+    q(".pnow").addEventListener("click", () => this._more(gw().electricity_price));
+    this._built = true;
+  }
+
+  _update() {
+    if (!this._built || !this._layout()) return;
+    const q = (s) => this.shadowRoot.querySelector(s);
+    const loc = this._locale();
+    const eur = (v, d = 2) => (v == null ? "–" : v.toLocaleString(loc, { style: "currency", currency: "EUR", minimumFractionDigits: d, maximumFractionDigits: d }));
+    const today = this._g("earnings_today");
+    q(".eur").textContent = eur(today);
+    const saved = this._g("savings_today"), exp = this._g("export_revenue_today");
+    q(".split").textContent = saved == null ? "" : `${eur(saved)} ${this._e("saved")} · ${eur(exp)} ${this._e("exported")}`;
+    q(".t-month b").textContent = eur(this._g("earnings_month"), 0);
+    q(".t-year b").textContent = eur(this._g("earnings_year"), 0);
+    const perKwh = this._g("earnings_per_kwh");
+    q(".t-year small").textContent = perKwh == null ? "" : `${eur(perKwh, 3)} ${this._e("perkwh")}`;
+    q(".t-total b").textContent = eur(this._g("earnings_total"), 0);
+    const pay = this._g("payback_years");
+    const since = this._gState("earnings_total")?.attributes.since;
+    q(".t-total small").textContent = pay != null
+      ? `${this._e("payback")} ${fmt(pay, 1)} ${this._e("years")}`
+      : since ? `${this._e("since")} ${new Date(since).toLocaleDateString(loc, { month: "short", year: "numeric" })}` : "";
+    const price = this._g("electricity_price"), exportPrice = this._g("export_price");
+    q(".pnow").innerHTML = price == null ? "" :
+      `<span class="cap">${esc(this._e("price"))}</span> <b>${eur(price, 3)}</b>` +
+      (exportPrice != null && Math.abs(exportPrice - price) > 0.0005 ? ` <span class="cap">· ${esc(this._e("exportp"))}</span> <b>${eur(exportPrice, 3)}</b>` : "");
+    const neg = this._gState("exporting_at_negative_price")?.state === "on";
+    q(".alert").hidden = !neg;
+    this._chart(this._gState("electricity_price")?.attributes.prices || []);
+  }
+
+  _chart(rows) {
+    const svg = this.shadowRoot.querySelector(".chart svg");
+    const msg = this.shadowRoot.querySelector(".msg");
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end = start.getTime() + 86400000;
+    const pts = rows.map(([t, p]) => [Date.parse(t), p]).filter(([t]) => t >= start.getTime() && t < end);
+    msg.hidden = pts.length > 0;
+    this.shadowRoot.querySelector(".chart").hidden = !pts.length;
+    if (!pts.length) return;
+    const vals = pts.map(([, p]) => p);
+    const lo = Math.min(0, ...vals), hi = Math.max(...vals, 0.01);
+    const y = (p) => 66 - ((p - lo) / (hi - lo)) * 60;
+    const w = 300 / Math.max(24, pts.length);
+    const step = (end - start.getTime()) / 300;
+    const now = Date.now();
+    const sorted = [...vals].sort((a, b) => a - b);
+    const cheap = sorted[Math.floor(sorted.length * 0.25)], dear = sorted[Math.floor(sorted.length * 0.75)];
+    svg.innerHTML = pts.map(([t, p]) => {
+      const x = (t - start.getTime()) / step;
+      const cls = p < 0 ? "neg" : p <= cheap ? "low" : p >= dear ? "high" : "mid";
+      const top = Math.min(y(p), y(0)), h = Math.max(1, Math.abs(y(p) - y(0)));
+      const past = t + 900000 < now ? " past" : "";
+      return `<rect class="${cls}${past}" x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${Math.max(0.6, w * 0.78).toFixed(2)}" height="${h.toFixed(2)}" rx="0.8"/>`;
+    }).join("") + `<line class="zero" x1="0" x2="300" y1="${y(0).toFixed(2)}" y2="${y(0).toFixed(2)}"/>` +
+      `<line class="now" x1="${((now - start.getTime()) / step).toFixed(2)}" x2="${((now - start.getTime()) / step).toFixed(2)}" y1="0" y2="70"/>`;
+  }
+}
+
+const EARN_STYLE = `
+  .top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom: 12px; }
+  .pnow { font-size: .8rem; cursor: pointer; }
+  .pnow b { font-variant-numeric: tabular-nums; }
+  .alert { margin: 0 0 10px; padding: 8px 12px; border-radius: 12px; font-size: .82rem; background: rgba(229,72,77,.15); color: #ff8a8e; }
+  .alert[hidden] { display:none; }
+  .hero { width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding: 14px 16px; border-radius: 16px; cursor:pointer;
+          text-align:left; background: linear-gradient(150deg, rgba(var(--sun), .22), rgba(var(--sun), .05)); border: 1px solid rgba(var(--sun), .35); }
+  .eur { font-size: 2.4rem; font-weight: 300; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: rgb(var(--sun)); }
+  .split { font-size: .78rem; color: var(--secondary-text-color); }
+  .tiles { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+  .tile { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding: 10px 11px; border-radius: 12px; cursor:pointer; text-align:left; min-width:0; }
+  .tile span, .tile small { font-size: .72rem; color: var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .tile b { font-size: 1.05rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .chart { margin-top: 12px; }
+  .chart[hidden] { display:none; }
+  .chart svg { width:100%; height: 70px; display:block; margin-top: 4px; }
+  .chart rect.low { fill: #45D69A; } .chart rect.mid { fill: #F4B740; } .chart rect.high { fill: #FF5C61; } .chart rect.neg { fill: #5AA9FF; }
+  .chart rect.past { opacity: .35; }
+  .chart .zero { stroke: rgba(var(--ink), .25); stroke-width: .6; }
+  .chart .now { stroke: rgba(var(--ink), .8); stroke-width: 1; stroke-dasharray: 2 2; }
+  .axis { display:flex; justify-content:space-between; font-size: .68rem; color: var(--secondary-text-color); margin-top: 2px; }
+  :host([size="small"]) .tiles { grid-template-columns: 1fr; }
+`;
+
 const sized = (size) =>
   class extends EnphasePanelLayoutCard {
     static defaultSize = size;
@@ -4146,6 +4291,8 @@ const CARDS = [
    "Every microinverter in a sortable table: AC, DC, efficiency, temperature, today, health and last report."],
   ["enphase-energy-card", EnphaseEnergyCard, "Enphase production history",
    "Calendar of daily production, months compared with last year, and records."],
+  ["enphase-earnings-card", EnphaseEarningsCard, "Enphase earnings",
+   "What your panels saved and earned in euro, with today's day-ahead price."],
   ["enphase-system-card", EnphaseSystemCard, "Enphase system summary",
    "Solar, home and grid at a glance, today's energy, self-consumption and status."],
 ];

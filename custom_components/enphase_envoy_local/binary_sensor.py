@@ -117,6 +117,8 @@ async def async_setup_entry(
         for desc in GATEWAY
         if desc.value_fn(coordinator.data) is not None
     )
+    if coordinator.earnings is not None:
+        async_add_entities([EnvoyNegativePriceSensor(coordinator, NEGATIVE_EXPORT)])
     known: set[str] = set()
 
     @callback
@@ -163,3 +165,31 @@ class EnvoyInverterBinarySensor(EnvoyInverterEntity, BinarySensorEntity):
         """State."""
         data = self._data
         return None if data is None else self.entity_description.value_fn(data)
+
+
+NEGATIVE_EXPORT = BinarySensorEntityDescription(
+    key="exporting_at_negative_price",
+    translation_key="exporting_at_negative_price",
+    device_class=BinarySensorDeviceClass.PROBLEM,
+)
+
+
+class EnvoyNegativePriceSensor(EnvoyEntity, BinarySensorEntity):
+    """On while exporting at a negative market price (export costs money)."""
+
+    @property
+    def is_on(self) -> bool | None:
+        """Exporting more than 50 W while the market price is below zero."""
+        market = self.coordinator.earnings.price_now()[0]
+        net = self.coordinator.data.net_power if self.coordinator.data else None
+        if market is None:
+            return None
+        if net is None:
+            prod = self.coordinator.data.production_power if self.coordinator.data else None
+            return bool(market < 0 and (prod or 0) > 50)
+        return bool(market < 0 and net < -50)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Market price now."""
+        return {"market_price": self.coordinator.earnings.price_now()[0]}

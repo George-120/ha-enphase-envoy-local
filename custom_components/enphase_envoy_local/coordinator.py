@@ -172,6 +172,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         self.layout: dict | None = None
         self.layout_status: str | None = None
         self.forecast = None  # SolarForecast, set up in __init__ when enabled
+        self.earnings = None  # Earnings, set up in __init__ when enabled
         self._alerts = AlertTracker()
         self._issues: set[str] = set()
         self._layout_store: Store[dict] = Store(

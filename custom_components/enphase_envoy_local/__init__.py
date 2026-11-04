@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import CONF_FORECAST, DOMAIN, FORECAST_INTERVAL
 from .coordinator import EnvoyConfigEntry, EnvoyCoordinator
 from .entity import ensure_gateway_device
+from .earnings import CONF_EARNINGS, Earnings
 from .forecast import SolarForecast
 from .services import async_setup_services
 
@@ -93,6 +94,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnvoyConfigEntry) -> boo
         )
         entry.async_create_background_task(
             hass, forecast.async_update(), f"{DOMAIN} solar forecast"
+        )
+    if entry.options.get(CONF_EARNINGS, True) and coordinator.data:
+        earnings = coordinator.earnings = Earnings(hass, coordinator)
+        await earnings.async_update()
+        entry.async_on_unload(
+            coordinator.async_add_listener(
+                lambda: hass.async_create_task(earnings.async_update(), eager_start=True)
+            )
         )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

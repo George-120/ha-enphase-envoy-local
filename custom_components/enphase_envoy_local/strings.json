@@ -110,7 +110,26 @@
         "title": "Settings",
         "menu_options": {
           "general": "General",
-          "meters": "Own meters (Shelly, P1…)"
+          "meters": "Own meters (Shelly, P1…)",
+          "earnings": "Earnings in euro"
+        }
+      },
+      "earnings": {
+        "title": "Earnings in euro",
+        "description": "What your panels save and earn, valued with the day-ahead (EPEX SPOT) price of every quarter hour, fetched by the integration itself (Energy-Charts, free, no account). Price = (market + markup + energy tax) × (1 + VAT). The past is filled in from your statistics.",
+        "data": {
+          "earnings": "Calculate earnings",
+          "price_zone": "Price zone",
+          "price_markup": "Supplier markup (excl. VAT)",
+          "price_energy_tax": "Energy tax (excl. VAT)",
+          "price_vat": "VAT",
+          "export_mode": "Export compensation",
+          "export_fee": "Export fee (per kWh exported)",
+          "investment": "Investment (optional, for the payback time)"
+        },
+        "data_description": {
+          "export_mode": "Net metering: export is worth the full consumer price (NL until 2027). Dynamic: market price minus the export fee.",
+          "price_markup": "The fixed amount per kWh your supplier adds to the market price."
         }
       }
     }
@@ -406,6 +425,36 @@
       },
       "inverter_power_live": {
         "name": "Power (live estimate)"
+      },
+      "earnings_today": {
+        "name": "Earnings today"
+      },
+      "savings_today": {
+        "name": "Savings by self-use today"
+      },
+      "export_revenue_today": {
+        "name": "Export revenue today"
+      },
+      "earnings_month": {
+        "name": "Earnings this month"
+      },
+      "earnings_year": {
+        "name": "Earnings this year"
+      },
+      "earnings_total": {
+        "name": "Earnings total"
+      },
+      "electricity_price": {
+        "name": "Electricity price now"
+      },
+      "export_price": {
+        "name": "Export price now"
+      },
+      "earnings_per_kwh": {
+        "name": "Average value per kWh"
+      },
+      "payback_years": {
+        "name": "Payback time remaining"
       }
     },
     "binary_sensor": {
@@ -432,6 +481,9 @@
       },
       "grid_voltage_high": {
         "name": "Grid voltage high"
+      },
+      "exporting_at_negative_price": {
+        "name": "Exporting at negative price"
       }
     },
     "button": {
@@ -522,6 +574,12 @@
       "options": {
         "positive": "Positive (+)",
         "negative": "Negative (−)"
+      }
+    },
+    "export_mode": {
+      "options": {
+        "net_metering": "Net metering (salderen)",
+        "dynamic": "Dynamic (market price − export fee)"
       }
     }
   }

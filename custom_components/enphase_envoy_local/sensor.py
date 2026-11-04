@@ -908,6 +908,12 @@ async def async_setup_entry(
         entities.extend(EnvoyForecastSensor(coordinator, desc) for desc in (*FORECAST_SENSORS, *FORECAST_EXTRA))
         entities.append(EnvoyForecastPerformanceSensor(coordinator, FORECAST_VS_ACTUAL))
         entities.append(EnvoyForecastAccuracySensor(coordinator, FORECAST_ACCURACY))
+    if coordinator.earnings is not None:
+        entities.extend(
+            EnvoyEarningsSensor(coordinator, desc)
+            for desc in EARNINGS_SENSORS
+            if desc.key != "payback_years" or coordinator.earnings.investment
+        )
     async_add_entities(entities)
 
     # Values this gateway cannot deliver (e.g. 'last 7 days' on firmware 8)
@@ -1109,6 +1115,7 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
             "token_expires": "sensor",
             "last_reading": "sensor",
             "cloud_connected": "binary_sensor",
+            "exporting_at_negative_price": "binary_sensor",
             "refresh": "button",
             "forecast_today": "sensor",
             "forecast_tomorrow": "sensor",
@@ -1127,6 +1134,9 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                     "inverters_dc_power", "conversion_losses", "fleet_efficiency",
                     "inverter_temperature_avg", "inverter_temperature_max", "oldest_inverter_report",
                     "grid_import_lifetime", "grid_export_lifetime", "consumption_lifetime",
+                    "earnings_today", "savings_today", "export_revenue_today", "earnings_month",
+                    "earnings_year", "earnings_total", "electricity_price", "export_price",
+                    "earnings_per_kwh", "payback_years",
                 )
             }
         )
@@ -1193,6 +1203,88 @@ class EnvoyForecastPerformanceSensor(EnvoyEntity, SensorEntity):
         if not expected or expected < 0.2 or actual is None:
             return None
         return round(actual / 1000 / expected * 100, 0)
+
+
+@dataclass(frozen=True, kw_only=True)
+class EarningsSensorDescription(SensorEntityDescription):
+    """Sensor of the earnings in euro."""
+
+    value_fn: Callable[[Any], Any]
+
+
+def _money(key: str, period: str, part: str) -> EarningsSensorDescription:
+    return EarningsSensorDescription(
+        key=key,
+        translation_key=key,
+        native_unit_of_measurement="EUR",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        value_fn=lambda e, p=period, k=part: (e.period(p) or {}).get(k),
+    )
+
+
+EARNINGS_SENSORS: tuple[EarningsSensorDescription, ...] = (
+    _money("earnings_today", "day", "total"),
+    _money("savings_today", "day", "savings"),
+    _money("export_revenue_today", "day", "export"),
+    _money("earnings_month", "month", "total"),
+    _money("earnings_year", "year", "total"),
+    _money("earnings_total", "total", "total"),
+    EarningsSensorDescription(
+        key="electricity_price",
+        translation_key="electricity_price",
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=3,
+        value_fn=lambda e: e.price_now()[1],
+    ),
+    EarningsSensorDescription(
+        key="export_price",
+        translation_key="export_price",
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=3,
+        value_fn=lambda e: e.price_now()[2],
+    ),
+    EarningsSensorDescription(
+        key="earnings_per_kwh",
+        translation_key="earnings_per_kwh",
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=3,
+        value_fn=lambda e: (
+            round(e.period("year")["total"] / (e.period("year")["wh"] / 1000), 3)
+            if e.period("year") and e.period("year")["wh"] > 1000 else None
+        ),
+    ),
+    EarningsSensorDescription(
+        key="payback_years",
+        translation_key="payback_years",
+        native_unit_of_measurement=UnitOfTime.YEARS,
+        suggested_display_precision=1,
+        value_fn=lambda e: e.payback_years(),
+    ),
+)
+
+
+class EnvoyEarningsSensor(EnvoyEntity, SensorEntity):
+    """Earnings and electricity prices."""
+
+    entity_description: EarningsSensorDescription
+    _unrecorded_attributes = frozenset({"prices", "since"})
+
+    @property
+    def native_value(self) -> Any:
+        """Value."""
+        return self.entity_description.value_fn(self.coordinator.earnings)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Prices of today and tomorrow on the price sensor, start on the total."""
+        e = self.coordinator.earnings
+        if self.entity_description.key == "electricity_price":
+            return {"prices": e.hourly_prices(), "zone": e.tariff.zone, "error": e.error}
+        if self.entity_description.key == "earnings_total":
+            return {"since": e.data.get("total", {}).get("since")}
+        return None
 
 
 class EnvoyForecastAccuracySensor(EnvoyEntity, SensorEntity):

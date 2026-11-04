@@ -37,6 +37,19 @@ try:  # Home Assistant 2025.1+
 except ImportError:  # pragma: no cover - older cores
     from homeassistant.components.zeroconf import ZeroconfServiceInfo
 
+from .earnings import (
+    BIDDING_ZONES,
+    CONF_EARNINGS,
+    CONF_ENERGY_TAX,
+    CONF_EXPORT_FEE,
+    CONF_EXPORT_MODE,
+    CONF_INVESTMENT,
+    CONF_MARKUP,
+    CONF_VAT,
+    CONF_ZONE,
+    default_zone,
+    zone_defaults,
+)
 from .api import (
     EnlightenAuthError,
     EnlightenError,
@@ -366,7 +379,7 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Menu: general settings or own meters."""
-        return self.async_show_menu(step_id="init", menu_options=["general", "meters"])
+        return self.async_show_menu(step_id="init", menu_options=["general", "meters", "earnings"])
 
     async def async_step_general(
         self, user_input: dict[str, Any] | None = None
@@ -462,3 +475,36 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
         for key in CONF_EXT_GRID_PHASES:
             schema[opt(key)] = power
         return self.async_show_form(step_id="meters", data_schema=vol.Schema(schema))
+
+    async def async_step_earnings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Earnings in euro: day-ahead prices and the energy contract."""
+        options = dict(self.config_entry.options)
+        if user_input is not None:
+            options.pop(CONF_INVESTMENT, None)
+            options.update({k: v for k, v in user_input.items() if v not in (None, "")})
+            return self.async_create_entry(data=options)
+        zone = options.get(CONF_ZONE) or default_zone(self.hass)
+        defaults = zone_defaults(zone)
+
+        def money(step: float, unit: str, maximum: float = 10.0) -> NumberSelector:
+            return NumberSelector(NumberSelectorConfig(min=-1 if unit != "EUR" else 0, max=maximum, step=step, unit_of_measurement=unit, mode=NumberSelectorMode.BOX))
+
+        schema = {
+            vol.Required(CONF_EARNINGS, default=options.get(CONF_EARNINGS, True)): BooleanSelector(),
+            vol.Required(CONF_ZONE, default=zone): SelectSelector(
+                SelectSelectorConfig(options=BIDDING_ZONES, mode=SelectSelectorMode.DROPDOWN)
+            ),
+            vol.Required(CONF_MARKUP, default=options.get(CONF_MARKUP, 0.0)): money(0.0001, "EUR/kWh"),
+            vol.Required(CONF_ENERGY_TAX, default=options.get(CONF_ENERGY_TAX, defaults["energy_tax"])): money(0.0001, "EUR/kWh"),
+            vol.Required(CONF_VAT, default=options.get(CONF_VAT, defaults["vat"])): NumberSelector(
+                NumberSelectorConfig(min=0, max=30, step=0.5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_EXPORT_MODE, default=options.get(CONF_EXPORT_MODE, defaults["export_mode"])): SelectSelector(
+                SelectSelectorConfig(options=["net_metering", "dynamic"], translation_key=CONF_EXPORT_MODE, mode=SelectSelectorMode.LIST)
+            ),
+            vol.Required(CONF_EXPORT_FEE, default=options.get(CONF_EXPORT_FEE, 0.0)): money(0.0001, "EUR/kWh"),
+            vol.Optional(CONF_INVESTMENT, description={"suggested_value": options.get(CONF_INVESTMENT)}): money(1, "EUR", 1_000_000),
+        }
+        return self.async_show_form(step_id="earnings", data_schema=vol.Schema(schema))

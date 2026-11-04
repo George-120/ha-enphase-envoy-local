@@ -110,7 +110,26 @@
         "title": "Einstellungen",
         "menu_options": {
           "general": "Allgemein",
-          "meters": "Eigene Zähler (Shelly, P1…)"
+          "meters": "Eigene Zähler (Shelly, P1…)",
+          "earnings": "Ertrag in Euro"
+        }
+      },
+      "earnings": {
+        "title": "Ertrag in Euro",
+        "description": "Was deine Module einsparen und einbringen, bewertet mit dem Day-Ahead-Preis (EPEX SPOT) jeder Viertelstunde, den die Integration selbst abruft (Energy-Charts, kostenlos, ohne Konto). Preis = (Börse + Aufschlag + Energiesteuer) × (1 + MwSt.). Die Vergangenheit wird aus deinen Statistiken ergänzt.",
+        "data": {
+          "earnings": "Ertrag berechnen",
+          "price_zone": "Preiszone",
+          "price_markup": "Aufschlag des Anbieters (ohne MwSt.)",
+          "price_energy_tax": "Energiesteuer (ohne MwSt.)",
+          "price_vat": "MwSt.",
+          "export_mode": "Einspeisevergütung",
+          "export_fee": "Einspeisegebühr (je eingespeiste kWh)",
+          "investment": "Investition (optional, für die Amortisationszeit)"
+        },
+        "data_description": {
+          "export_mode": "Saldierung: Einspeisung ist den vollen Strompreis wert. Dynamisch: Börsenpreis minus Einspeisegebühr.",
+          "price_markup": "Der feste Betrag je kWh, den dein Anbieter auf den Börsenpreis aufschlägt."
         }
       }
     }
@@ -406,6 +425,36 @@
       },
       "inverter_power_live": {
         "name": "Leistung (Live-Schätzung)"
+      },
+      "earnings_today": {
+        "name": "Ertrag heute"
+      },
+      "savings_today": {
+        "name": "Ersparnis Eigenverbrauch heute"
+      },
+      "export_revenue_today": {
+        "name": "Einspeiseerlös heute"
+      },
+      "earnings_month": {
+        "name": "Ertrag diesen Monat"
+      },
+      "earnings_year": {
+        "name": "Ertrag dieses Jahr"
+      },
+      "earnings_total": {
+        "name": "Ertrag gesamt"
+      },
+      "electricity_price": {
+        "name": "Strompreis jetzt"
+      },
+      "export_price": {
+        "name": "Einspeisepreis jetzt"
+      },
+      "earnings_per_kwh": {
+        "name": "Durchschnittswert je kWh"
+      },
+      "payback_years": {
+        "name": "Verbleibende Amortisationszeit"
       }
     },
     "binary_sensor": {
@@ -432,6 +481,9 @@
       },
       "grid_voltage_high": {
         "name": "Netzspannung hoch"
+      },
+      "exporting_at_negative_price": {
+        "name": "Einspeisung bei negativem Preis"
       }
     },
     "button": {
@@ -522,6 +574,12 @@
       "options": {
         "positive": "Positiv (+)",
         "negative": "Negativ (−)"
+      }
+    },
+    "export_mode": {
+      "options": {
+        "net_metering": "Saldierung",
+        "dynamic": "Dynamisch (Börsenpreis − Einspeisegebühr)"
       }
     }
   }

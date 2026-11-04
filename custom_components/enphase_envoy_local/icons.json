@@ -275,6 +275,36 @@
       },
       "inverter_power_live": {
         "default": "mdi:solar-power-variant-outline"
+      },
+      "earnings_today": {
+        "default": "mdi:cash-plus"
+      },
+      "savings_today": {
+        "default": "mdi:piggy-bank"
+      },
+      "export_revenue_today": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "earnings_month": {
+        "default": "mdi:cash-multiple"
+      },
+      "earnings_year": {
+        "default": "mdi:cash-multiple"
+      },
+      "earnings_total": {
+        "default": "mdi:treasure-chest"
+      },
+      "electricity_price": {
+        "default": "mdi:currency-eur"
+      },
+      "export_price": {
+        "default": "mdi:currency-eur"
+      },
+      "earnings_per_kwh": {
+        "default": "mdi:scale-balance"
+      },
+      "payback_years": {
+        "default": "mdi:calendar-clock"
       }
     },
     "binary_sensor": {
@@ -322,6 +352,9 @@
       },
       "grid_voltage_high": {
         "default": "mdi:flash-alert"
+      },
+      "exporting_at_negative_price": {
+        "default": "mdi:cash-remove"
       }
     },
     "button": {
