@@ -18,6 +18,7 @@ statistics, so totals and the payback time are there from the first day.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import logging
@@ -41,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://api.energy-charts.info/price"
 STORAGE_VERSION = 1
 BACKFILL_DAYS = 400
-BACKFILL_VERSION = 2  # bump to rebuild the past from the statistics
+BACKFILL_VERSION = 3  # bump to rebuild the past from the statistics
 
 CONF_EARNINGS = "earnings"
 CONF_ZONE = "price_zone"
@@ -241,7 +242,9 @@ class Earnings:
             self.data = await self._store.async_load() or {}
             self._loaded = True
         await self._async_refresh_prices()
-        if self.data.get("backfill") != BACKFILL_VERSION and not self._backfilling:
+        retry = self.data.get("backfill_retry")
+        due = retry is None or dt_util.utcnow() >= dt_util.parse_datetime(retry)
+        if (self.data.get("backfill") != BACKFILL_VERSION and due) and not self._backfilling:
             self._backfilling = True
             self.coordinator.config_entry.async_create_background_task(
                 self.hass, self._async_backfill(), f"{DOMAIN} earnings backfill"
@@ -331,25 +334,37 @@ class Earnings:
             return
         first = min(production)
         until = end
-        prices: list[tuple[datetime, float]] = list(self.points)
+        # Hourly market prices, kept between runs so only what is missing is fetched.
+        cache: dict[str, float] = dict(self.data.get("market_cache") or {})
+
+        def add_prices(points: list[tuple[datetime, float]]) -> None:
+            hourly: dict[int, list[float]] = {}
+            for moment, price in points:
+                hourly.setdefault(int(moment.timestamp()) // 3600, []).append(price)
+            for hour, values in hourly.items():
+                cache[str(hour)] = round(sum(values) / len(values), 5)
+
+        add_prices(self.points)
+        wanted = {int(m.timestamp()) // 3600 for m, wh in production.items() if wh > 0 and m < until}
         cursor = first
         missing_chunks = 0
         while cursor < until:
             chunk_end = min(cursor + timedelta(days=14), until + timedelta(days=1))
-            for attempt in range(3):
-                try:
-                    prices.extend(await self._async_prices(cursor, chunk_end))
-                    break
-                except Exception as err:  # noqa: BLE001
-                    if attempt == 2:
-                        missing_chunks += 1
-                        _LOGGER.info("Past prices not available (%s): %s", cursor.date(), err)
+            lo, hi = int(cursor.timestamp()) // 3600, int(chunk_end.timestamp()) // 3600
+            if any(str(h) not in cache for h in wanted if lo <= h < hi):
+                for attempt in range(3):
+                    try:
+                        add_prices(await self._async_prices(cursor, chunk_end))
+                        break
+                    except Exception as err:  # noqa: BLE001 - often too many requests
+                        if attempt == 2:
+                            missing_chunks += 1
+                            _LOGGER.info("Past prices not available (%s): %s", cursor.date(), err)
+                        else:
+                            await asyncio.sleep(10 * (attempt + 1))
+                await asyncio.sleep(2)  # be gentle with the free API
             cursor = chunk_end
-        prices = sorted(set(prices))
-        hourly: dict[datetime, list[float]] = {}
-        for moment, price in prices:
-            hourly.setdefault(moment.replace(minute=0, second=0, microsecond=0), []).append(price)
-        market = {k: sum(v) / len(v) for k, v in hourly.items()}
+        market = {datetime.fromtimestamp(int(h) * 3600, tz=UTC): p for h, p in cache.items()}
         tariff = self.tariff
         # The past is rebuilt from scratch; live tracking continues from here.
         self.data = {"total": {}}
@@ -364,7 +379,12 @@ class Earnings:
             value = tariff.value(market[moment], production[moment], export.get(moment) if export else None)
             self._add(moment, value["savings"], value["export"], production[moment])
         self.data["total"]["since"] = first.isoformat()
-        self.data["backfill"] = BACKFILL_VERSION
+        self.data["market_cache"] = cache
+        if missing_chunks:
+            # Try the missing prices again in an hour; the totals so far stay.
+            self.data["backfill_retry"] = (dt_util.utcnow() + timedelta(hours=1)).isoformat()
+        else:
+            self.data["backfill"] = BACKFILL_VERSION
         self.data["backfill_info"] = {
             "hours": len(production), "hours_without_price": without_price,
             "price_chunks_failed": missing_chunks, "until": until.isoformat(),
