@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.22.0";
+const CARD_VERSION = "1.22.1";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -231,6 +231,21 @@ const SIZE_FIELD = {
 /* "Clean" look, the style of the Easee Smart card: a calm dark-navy card,
  * flat tiles, segmented buttons and light large numbers. Classic = glass. */
 const CLEAN = `
+  :host { --ink: 255,255,255; }
+  :host([tone="light"]) { --ink: 20,24,30; }
+  /* Clean in a light Home Assistant theme: the light palette of the Easee card */
+  :host([look="clean"][tone="light"]) {
+    --c-bg: #FFFFFF; --c-panel: #F2F4F7; --c-line: #E3E7EC; --c-text: #14181E; --c-muted: #6B7480;
+    --c-accent: #2F7FE0; --c-sel: #FFFFFF;
+  }
+  :host([look="clean"][tone="light"]) ha-card { box-shadow: 0 2px 10px rgba(20,24,30,.06); }
+  :host([look="clean"][tone="light"]) .modes .chip.on, :host([look="clean"][tone="light"]) .seg button.on {
+    box-shadow: 0 1px 4px rgba(20,24,30,.12) !important; }
+  :host([look="clean"][tone="light"]) .act.on, :host([look="clean"][tone="light"]) .chip.primary,
+  :host([look="clean"][tone="light"]) .replay .play { color: #FFFFFF !important; }
+  :host([tone="light"]) .tf .tn { fill: #9a6b00; }
+  :host([tone="light"]) .hl1, :host([tone="light"]) .hl2 { fill: rgba(255,255,255,.55); }
+  :host([tone="light"]) .gbody { fill: rgba(20,24,30,.03); }
   :host([look="clean"]) {
     --c-bg: #14181E; --c-panel: #1C2129; --c-line: #2A303A; --c-text: #EDF0F4; --c-muted: #8C95A2;
     --c-accent: #5AA9FF; --c-sel: #2C3440;
@@ -1941,7 +1956,7 @@ const STYLE = `
   .cal .wd { text-align:center; font-size: .68rem; color: var(--secondary-text-color); text-transform: uppercase; padding: 4px 0; }
   .cd { font: inherit; font-size: .82rem; aspect-ratio: 1; border-radius: 50%; border: 1px solid transparent; cursor:pointer;
         background: transparent; color: var(--primary-text-color); font-variant-numeric: tabular-nums; transition: background .15s; }
-  .cd:hover:not(:disabled) { background: rgba(255,255,255,.1); }
+  .cd:hover:not(:disabled) { background: rgba(var(--ink),.1); }
   .cd.out { color: var(--secondary-text-color); opacity: .55; }
   .cd:disabled { opacity: .22; cursor: default; }
   .cd.today { border-color: rgba(var(--sun), .7); color: rgb(var(--sun)); font-weight: 700; }
@@ -1968,7 +1983,7 @@ const STYLE = `
   .area-all { fill: rgba(127,127,127,.18); }
   .area-done { fill: url(#sunfill); }
   .line-done { fill:none; stroke: rgb(var(--sun)); stroke-width: 2; vector-effect: non-scaling-stroke; }
-  .line-exp { fill:none; stroke: rgba(255,255,255,.7); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+  .line-exp { fill:none; stroke: rgba(var(--ink),.7); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
   .shade-bar { display:flex; flex-direction:column; gap:10px; padding: 12px 14px 10px; border-radius: 20px;
                background: linear-gradient(160deg, rgba(124,135,255,.14), rgba(255,255,255,.035) 55%) !important;
                border-color: rgba(124,135,255,.3) !important; animation: slide .25s ease; }
@@ -2054,8 +2069,8 @@ const STYLE = `
   :host([small]) .w { font-size: clamp(.6rem, 2.4cqw, 1rem); }
   :host([small]) .val small, :host([small]) .temp { display: none; }
   :host([small]) .phase { font-size: .5rem; padding: 0 3px; }
-  .roof.editing { background-image: radial-gradient(rgba(255,255,255,.08) 1px, transparent 1px);
-                  background-size: 12px 12px; border-radius: 8px; outline: 1px dashed rgba(255,255,255,.15); }
+  .roof.editing { background-image: radial-gradient(rgba(var(--ink),.08) 1px, transparent 1px);
+                  background-size: 12px 12px; border-radius: 8px; outline: 1px dashed rgba(var(--ink),.15); }
   .roof.editing .panel { cursor: grab; touch-action: none; }
   .roof.editing .panel.dragging { cursor: grabbing; z-index: 5; opacity: .85; transition: none; }
   .panel.selected { outline: 3px solid rgb(var(--sun)); outline-offset: 1px; z-index: 4; }
@@ -2200,8 +2215,8 @@ class EnphaseForecastCard extends HTMLElement {
           <svg viewBox="0 0 1000 220" preserveAspectRatio="none">
             <defs>
               <linearGradient id="fexp" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="rgb(255,255,255)" stop-opacity=".22"/>
-                <stop offset="1" stop-color="rgb(255,255,255)" stop-opacity="0"/>
+                <stop offset="0" style="stop-color:rgb(var(--ink))" stop-opacity=".22"/>
+                <stop offset="1" style="stop-color:rgb(var(--ink))" stop-opacity="0"/>
               </linearGradient>
               <linearGradient id="fact" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stop-color="rgb(255,176,32)" stop-opacity=".6"/>
@@ -2462,12 +2477,12 @@ const FORECAST_STYLE = `
   .grid line { stroke: rgba(127,127,127,.16); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .grid line.h { stroke-dasharray: 2 6; }
   .exp-area { fill: url(#fexp); }
-  .exp-line { fill: none; stroke: rgba(255,255,255,.75); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .exp-line { fill: none; stroke: rgba(var(--ink),.75); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
   .act-area { fill: url(#fact); }
   .act-line { fill: none; stroke: rgb(var(--sun)); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round;
               filter: drop-shadow(0 0 6px rgba(var(--sun), .6)); }
   .now { stroke: var(--error-color, #e53935); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; }
-  .hover { stroke: rgba(255,255,255,.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .hover { stroke: rgba(var(--ink),.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .xlabels { position: relative; height: 16px; font-size: .68rem; color: var(--secondary-text-color); }
   .xlabels span { position:absolute; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
   .tip { position:absolute; top: 4px; transform: translateX(-50%); display:flex; flex-direction:column; gap:3px; pointer-events:none;
@@ -2478,7 +2493,7 @@ const FORECAST_STYLE = `
   .legend { display:flex; gap: 16px; flex-wrap: wrap; align-items:center; font-size: .75rem; color: var(--secondary-text-color); margin-top: 6px; }
   .legend .calib { margin-left: auto; }
   .lg-exp, .lg-act { display:inline-block; width: 16px; height: 0; margin-right: 6px; vertical-align: middle; }
-  .lg-exp { border-top: 2px dashed rgba(255,255,255,.75); }
+  .lg-exp { border-top: 2px dashed rgba(var(--ink),.75); }
   .lg-act { border-top: 3px solid rgb(var(--sun)); }
   .orient { display:flex; flex-wrap:wrap; gap: 6px 14px; margin-top: 10px; font-size: .72rem; color: var(--secondary-text-color); }
   .orient b { color: var(--primary-text-color); font-weight: 600; }
@@ -2905,9 +2920,9 @@ const INV_STYLE = `
   th.on { color: rgb(var(--sun)); }
   th .arrow { font-style: normal; margin-left: 3px; font-size: .6rem; }
   th:first-child, td:first-child { text-align: left; }
-  td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.05); white-space: nowrap; }
+  td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(var(--ink),.05); white-space: nowrap; }
   tbody tr { cursor: pointer; transition: background .15s; }
-  tbody tr:hover { background: rgba(255,255,255,.05); }
+  tbody tr:hover { background: rgba(var(--ink),.05); }
   tbody tr.problem td:first-child { box-shadow: inset 3px 0 0 var(--error-color, #e53935); }
   td.panel b { display:block; font-size: .82rem; }
   td.panel small { color: var(--secondary-text-color); font-size: .68rem; }
@@ -3249,7 +3264,7 @@ const ENERGY_STYLE = `
   .cal .wd { text-align:center; font-size:.68rem; text-transform: uppercase; color: var(--secondary-text-color); }
   .cell { position: relative; aspect-ratio: 1.3; border-radius: 12px; min-width: 0; overflow: hidden;
           display:flex; align-items:center; justify-content:center;
-          background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+          background: rgba(var(--ink),.035); border: 1px solid rgba(var(--ink),.07); box-shadow: inset 0 1px 0 rgba(var(--ink),.06); }
   .cell.empty { background: none; border: 0; box-shadow: none; }
   .cell.future { opacity: .3; }
   .cell.today { border-color: rgba(var(--sun), .9); box-shadow: 0 0 0 1px rgba(var(--sun), .5), inset 0 1px 0 rgba(255,255,255,.1); }
@@ -3269,13 +3284,13 @@ const ENERGY_STYLE = `
   .mb .bars { position: relative; width: 100%; flex: 1; display:flex; align-items:flex-end; justify-content:center; gap: 2px; }
   .mb .bars i { display:block; width: 42%; border-radius: 6px 6px 3px 3px; transition: height .8s ease; }
   .mb i.cur { background: linear-gradient(180deg, #ffd27a, rgb(var(--sun)) 60%, #e08900); box-shadow: 0 0 10px rgba(var(--sun), .35); }
-  .mb i.prev { background: rgba(255,255,255,.18); }
+  .mb i.prev { background: rgba(var(--ink),.18); }
   .mb b { font-size: .62rem; font-variant-numeric: tabular-nums; min-height: 1em; }
   .mb span { font-size: .65rem; color: var(--secondary-text-color); text-transform: capitalize; }
   .legend { display:flex; gap: 14px; margin-top: 8px; font-size: .75rem; color: var(--secondary-text-color); }
   .lg { display:inline-block; width: 12px; height: 8px; border-radius: 3px; margin-right: 5px; }
   .lg.cur { background: rgb(var(--sun)); }
-  .lg.prev { background: rgba(255,255,255,.25); }
+  .lg.prev { background: rgba(var(--ink),.25); }
   .recs { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
   .rec { display:flex; gap: 10px; align-items:center; padding: 12px; border-radius: 16px;
          background: var(--g-fill-soft); border: 1px solid var(--g-edge); box-shadow: var(--g-shine); }
@@ -3781,17 +3796,17 @@ const PF_STYLE = `
   @container (max-width: 1px) {}
   .dial { position: relative; }
   .circ { width: 100%; max-height: 420px; display:block; overflow: visible; }
-  .ring { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 1.2; }
-  .ring.thin { stroke: rgba(255,255,255,.08); stroke-dasharray: 2 4; }
-  .quad { fill: rgba(255,255,255,.025); }
-  .axis { stroke: rgba(255,255,255,.45); stroke-width: 1.2; }
-  .ahp { fill: rgba(255,255,255,.55); }
+  .ring { fill: none; stroke: rgba(var(--ink),.28); stroke-width: 1.2; }
+  .ring.thin { stroke: rgba(var(--ink),.08); stroke-dasharray: 2 4; }
+  .quad { fill: rgba(var(--ink),.025); }
+  .axis { stroke: rgba(var(--ink),.45); stroke-width: 1.2; }
+  .ahp { fill: rgba(var(--ink),.55); }
   .ax { font-size: 10px; fill: rgba(120,160,255,.85); }
   .axl { font-size: 13px; font-weight: 700; fill: var(--primary-text-color); font-style: italic; }
   .qcap { font-size: 8.5px; fill: var(--secondary-text-color); opacity: .75; letter-spacing: .02em; }
   .trail polyline { fill: none; stroke: rgba(var(--pf-col), .35); stroke-width: 1.2; stroke-linejoin: round; }
   .trail circle { fill: rgb(var(--pf-col)); }
-  .proj { stroke: rgba(255,255,255,.55); stroke-width: 1; stroke-dasharray: 4 3; }
+  .proj { stroke: rgba(var(--ink),.55); stroke-width: 1; stroke-dasharray: 4 3; }
   .cosl { stroke: rgb(255,176,32); stroke-width: 4; stroke-linecap: round; }
   .sinl { stroke: rgb(171,71,188); stroke-width: 4; stroke-linecap: round; }
   .arc { fill: none; stroke: rgb(120,160,255); stroke-width: 1.5; }
@@ -3810,8 +3825,8 @@ const PF_STYLE = `
           box-shadow: var(--g-shine); transition: background .6s, border-color .6s; }
   .pfv { font-size: 2.6rem; line-height: 1.05; font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--pf-col)); transition: color .6s; }
   .kind { font-size: .8rem; color: var(--secondary-text-color); }
-  .bar { width: 100%; height: 6px; border-radius: 99px; background: rgba(255,255,255,.1); margin-top: 8px; overflow: hidden; position: relative; }
-  .bar::after { content:""; position:absolute; left:95%; top:0; bottom:0; width:2px; background: rgba(255,255,255,.6); }
+  .bar { width: 100%; height: 6px; border-radius: 99px; background: rgba(var(--ink),.1); margin-top: 8px; overflow: hidden; position: relative; }
+  .bar::after { content:""; position:absolute; left:95%; top:0; bottom:0; width:2px; background: rgba(var(--ink),.6); }
   .bar i { display:block; height:100%; border-radius: 99px; background: rgb(var(--pf-col)); transition: width 1s cubic-bezier(.2,.9,.25,1); }
   .tiles { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .tiles .pill { min-width: 0; }
@@ -4042,14 +4057,14 @@ class EnphaseBeerCard extends EnphasePowerFactorCard {
 
 const BEER_STYLE = `
   .glass { width: 100%; max-height: 460px; display:block; overflow: visible; }
-  .gbody { fill: rgba(255,255,255,.05); }
-  .gedge { fill: none; stroke: rgba(255,255,255,.5); stroke-width: 1.6; }
-  .rim { stroke: rgba(255,255,255,.85); stroke-width: 2.2; stroke-linecap: round; }
-  .gbase { fill: url(#base); stroke: rgba(255,255,255,.25); stroke-width: .8; }
-  .gbase-hl { fill: none; stroke: rgba(255,255,255,.35); stroke-width: 1; }
+  .gbody { fill: rgba(var(--ink),.05); }
+  .gedge { fill: none; stroke: rgba(var(--ink),.5); stroke-width: 1.6; }
+  .rim { stroke: rgba(var(--ink),.85); stroke-width: 2.2; stroke-linecap: round; }
+  .gbase { fill: url(#base); stroke: rgba(var(--ink),.25); stroke-width: .8; }
+  .gbase-hl { fill: none; stroke: rgba(var(--ink),.35); stroke-width: 1; }
   .hl1 { fill: rgba(255,255,255,.17); }
   .hl2 { fill: rgba(255,255,255,.32); }
-  .hl3 { fill: rgba(255,255,255,.08); }
+  .hl3 { fill: rgba(var(--ink),.08); }
   .bub { fill: rgba(255,248,215,.75); stroke: rgba(255,255,255,.55); stroke-width: .35; opacity: 0; }
   .bub.on { animation: rise var(--d) linear infinite; animation-delay: var(--dl); }
   @keyframes rise {
@@ -4061,14 +4076,14 @@ const BEER_STYLE = `
   .tex { opacity: .5; }
   .fbubs circle { fill: rgba(255,252,240,.55); stroke: rgba(190,150,80,.55); stroke-width: .5; }
   .lace { fill: none; stroke: rgba(255,250,235,.55); stroke-width: 1.4; stroke-linecap: round; }
-  .drop ellipse { fill: rgba(255,255,255,.12); stroke: rgba(255,255,255,.22); stroke-width: .4; }
+  .drop ellipse { fill: rgba(var(--ink),.12); stroke: rgba(var(--ink),.22); stroke-width: .4; }
   .drop .dh { fill: rgba(255,255,255,.7); }
-  .lead { stroke: rgba(255,255,255,.4); stroke-width: 1; stroke-dasharray: 3 3; }
+  .lead { stroke: rgba(var(--ink),.4); stroke-width: 1; stroke-dasharray: 3 3; }
   .tag { font-size: 11px; fill: var(--secondary-text-color); }
   .tag .tv { font-size: 13px; font-weight: 700; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
   .tf .tn { fill: #f3e3c0; }
   .tb .tn { fill: #f5ae22; }
-  .brace { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.3; }
+  .brace { fill: none; stroke: rgba(var(--ink),.55); stroke-width: 1.3; }
   .ts2 .tn { font-size: 14px; font-weight: 700; fill: var(--primary-text-color); font-style: italic; }
   @media (prefers-reduced-motion: reduce) { .bub.on { animation-duration: 0s; } }
 `;
@@ -4107,7 +4122,18 @@ function defineCards() {
   for (const [tag, cls] of CARDS) {
     if (customElements.get(tag)) continue;
     try {
-      customElements.define(tag, class extends cls {});
+      customElements.define(tag, class extends cls {
+        set hass(hass) {
+          // Follow the light or dark Home Assistant theme (like the Easee card).
+          const tone = hass?.themes?.darkMode === false ? "light" : "dark";
+          if (this.getAttribute("tone") !== tone) this.setAttribute("tone", tone);
+          super.hass = hass;
+        }
+
+        get hass() {
+          return this._hass;
+        }
+      });
     } catch (err) {
       /* defined meanwhile */
     }
