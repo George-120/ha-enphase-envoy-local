@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.21.1";
+const CARD_VERSION = "1.22.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -227,8 +227,85 @@ const SIZE_FIELD = {
   },
 };
 
+
+/* "Clean" look, the style of the Easee Smart card: a calm dark-navy card,
+ * flat tiles, segmented buttons and light large numbers. Classic = glass. */
+const CLEAN = `
+  :host([look="clean"]) {
+    --c-bg: #14181E; --c-panel: #1C2129; --c-line: #2A303A; --c-text: #EDF0F4; --c-muted: #8C95A2;
+    --c-accent: #5AA9FF; --c-sel: #2C3440;
+    --g-fill: var(--c-panel); --g-fill-soft: var(--c-panel); --g-edge: transparent; --g-shine: none; --g-blur: none;
+    --primary-text-color: var(--c-text); --secondary-text-color: var(--c-muted);
+  }
+  :host([look="clean"]) ha-card {
+    background: var(--c-bg) !important; color: var(--c-text);
+    border: 1px solid var(--c-line); border-radius: var(--ha-card-border-radius, 16px);
+    box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  :host([look="clean"]) ha-card::before { display: none; }
+  :host([look="clean"]) .title { font-size: 1.05rem; font-weight: 600; letter-spacing: .01em; }
+  :host([look="clean"]) .cap, :host([look="clean"]) .unit { color: var(--c-muted); }
+  :host([look="clean"]) .big { font-weight: 300; letter-spacing: -.02em; }
+  :host([look="clean"]) .pfv, :host([look="clean"]) .volt b, :host([look="clean"]) .node b,
+  :host([look="clean"]) .stat b, :host([look="clean"]) .figures b { font-weight: 300; letter-spacing: -.02em; }
+  :host([look="clean"]) .modes, :host([look="clean"]) .act, :host([look="clean"]) .replay,
+  :host([look="clean"]) .shade-bar, :host([look="clean"]) .live-btn, :host([look="clean"]) .tile,
+  :host([look="clean"]) .chip:not(.modes .chip), :host([look="clean"]) .mode-note,
+  :host([look="clean"]) .edit-sel select, :host([look="clean"]) .edit-sel input {
+    background: var(--c-panel) !important; border: 0 !important; box-shadow: none !important;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  :host([look="clean"]) .tile, :host([look="clean"]) .pill, :host([look="clean"]) .rec,
+  :host([look="clean"]) .day, :host([look="clean"]) .ph, :host([look="clean"]) .hero, :host([look="clean"]) .freq {
+    background: var(--c-panel) !important; border: 0 !important; box-shadow: none !important; border-radius: 12px;
+  }
+  :host([look="clean"]) .tile b, :host([look="clean"]) .pill b, :host([look="clean"]) .rec b { font-weight: 500; }
+  :host([look="clean"]) .tile span, :host([look="clean"]) .pill span { color: var(--c-muted); font-size: .72rem; }
+  :host([look="clean"]) .day.on { background: var(--c-sel) !important; box-shadow: inset 0 0 0 1px rgba(245,197,66,.45) !important; }
+  :host([look="clean"]) .ph.warn { box-shadow: inset 0 0 0 1px rgba(244,183,64,.6) !important; }
+  :host([look="clean"]) .ph.bad { box-shadow: inset 0 0 0 1px rgba(229,72,77,.7) !important; }
+  /* Segmented buttons like the Easee modes */
+  :host([look="clean"]) .modes, :host([look="clean"]) .seg {
+    background: var(--c-panel) !important; border-radius: 12px; padding: 3px; gap: 3px;
+  }
+  :host([look="clean"]) .modes .chip, :host([look="clean"]) .seg button {
+    background: none !important; border: 0 !important; box-shadow: none !important; border-radius: 9px;
+    color: var(--c-muted); font-weight: 400;
+  }
+  :host([look="clean"]) .modes .chip.on, :host([look="clean"]) .seg button.on {
+    background: var(--c-sel) !important; color: var(--c-text); box-shadow: none !important; font-weight: 500;
+  }
+  :host([look="clean"]) .act.on, :host([look="clean"]) .chip.primary {
+    background: var(--c-accent) !important; color: #06121F !important; font-weight: 600;
+  }
+  :host([look="clean"]) .replay { border-radius: 12px; }
+  :host([look="clean"]) .replay .play { background: var(--c-accent); box-shadow: none; color: #06121F; }
+  :host([look="clean"]) .cap.past { background: rgba(245,197,66,.18); border: 0; box-shadow: none; }
+  :host([look="clean"]) .roof .panel::after { display: none; }
+  :host([look="clean"]) .node svg { border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :host([look="clean"]) .bars .track { box-shadow: none; background: var(--c-line); }
+  :host([look="clean"]) .legend .bar { box-shadow: none; }
+  :host([look="clean"]) .cell { background: var(--c-panel); }
+  :host([look="clean"]) .tablewrap { background: var(--c-panel); border: 0; box-shadow: none; border-radius: 12px; }
+  :host([look="clean"]) .scale { background: var(--c-panel); border: 0; }
+  :host([look="clean"]) .msg { background: var(--c-panel); border: 0; border-radius: 12px; }
+`;
+
+const STYLE_FIELD = {
+  name: "style",
+  selector: { select: { mode: "list", options: [
+    { value: "clean", label: "Clean" },
+    { value: "classic", label: "Classic (glass / glas)" },
+  ] } },
+};
+
+function applyLook(el, config) {
+  el.setAttribute("look", config?.style === "classic" ? "classic" : "clean");
+}
+
 function applySize(el, config) {
   el.setAttribute("size", CARD_SIZES[config?.size] ? config.size : "medium");
+  applyLook(el, config);
 }
 
 function sizeGrid(config) {
@@ -292,6 +369,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
     if (Number(this._config.height) > 0 && !config.max_height)
       this._config.max_height = `${Math.max(120, Number(this._config.height) - 260)}px`;
     this.toggleAttribute("small", this._config.size === "small");
+    applyLook(this, this._config);
     this._mode = MODES.includes(this._config.mode) ? this._config.mode : "power";
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._built = false;
@@ -323,6 +401,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
             },
           },
         },
+        STYLE_FIELD,
         {
           name: "size",
           selector: {
@@ -352,7 +431,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
           title: "Title / Titel",
           entity: "Panel layout sensor / Paneelindeling-sensor",
           mode: "Start view / Startweergave",
-          size: "Size / Grootte",
+          style: "Style / Stijl", size: "Size / Grootte",
           height: "Height / Hoogte (empty = automatic / leeg = automatisch)",
           show_toolbar: "Buttons and replay / Knoppen en afspelen",
           show_labels: "Roof names / Dakvlaknamen",
@@ -559,7 +638,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       : "";
 
     this.shadowRoot.innerHTML = `
-      <style>${STYLE}${GLASS}</style>
+      <style>${STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="head">
           <div class="toprow">
@@ -1612,8 +1691,8 @@ class EnphaseSystemCard extends HTMLElement {
       schema: [
         { name: "title", selector: { text: {} } },
         { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
-      , SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      , STYLE_FIELD, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", style: "Style / Stijl", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -1647,7 +1726,7 @@ class EnphaseSystemCard extends HTMLElement {
   _build() {
     const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
     this.shadowRoot.innerHTML = `
-      <style>${SYSTEM_STYLE}${SIZE_STYLE}${GLASS}</style>
+      <style>${SYSTEM_STYLE}${SIZE_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         ${title}
         <div class="flow">
@@ -2051,8 +2130,8 @@ class EnphaseForecastCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, STYLE_FIELD, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", style: "Style / Stijl", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -2096,7 +2175,7 @@ class EnphaseForecastCard extends HTMLElement {
     const days = [-1, 0, 1, 2];
     const names = { "-1": "yesterday", 0: "today", 1: "tomorrow", 2: "day_after" };
     this.shadowRoot.innerHTML = `
-      <style>${FORECAST_STYLE}${SIZE_STYLE}${GLASS}</style>
+      <style>${FORECAST_STYLE}${SIZE_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("title"))}</div>
@@ -2473,8 +2552,8 @@ class EnphaseBaseCard extends HTMLElement {
 
   static getConfigForm() {
     return {
-      schema: [{ name: "title", selector: { text: {} } }, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      schema: [{ name: "title", selector: { text: {} } }, STYLE_FIELD, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
+      computeLabel: (s) => ({ title: "Title / Titel", style: "Style / Stijl", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -2567,7 +2646,7 @@ class EnphaseGridCard extends EnphaseBaseCard {
         </div>
       </div>`;
     this.shadowRoot.innerHTML = `
-      <style>${SIZE_STYLE}${XSTYLE}${GRID_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${GRID_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("grid"))}</div>
@@ -2709,7 +2788,7 @@ class EnphaseInvertersCard extends EnphaseBaseCard {
     const label = { panel: "panel", phase: "phase", ac: "ac", dc: "dc", dcv: "dc", eff: "eff", temp: "temp", today: "today", health: "health", report: "report" };
     const units = { ac: "W", dc: "W", dcv: "V · A", eff: "%", temp: "°C", today: "kWh", health: "%", report: "" };
     this.shadowRoot.innerHTML = `
-      <style>${SIZE_STYLE}${XSTYLE}${INV_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${INV_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top"><div class="title">${esc(this._config.title || this._t("inverters"))}</div><span class="count"></span></div>
         <div class="sum">
@@ -2871,7 +2950,7 @@ class EnphaseEnergyCard extends EnphaseBaseCard {
     const now = new Date();
     this._month = this._month || new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     this.shadowRoot.innerHTML = `
-      <style>${SIZE_STYLE}${XSTYLE}${ENERGY_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${ENERGY_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._t("energy"))}</div>
@@ -3454,7 +3533,7 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
       return `<text class="ax" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${l}</text>`;
     };
     this.shadowRoot.innerHTML = `
-      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._p("title"))}</div>
@@ -3804,7 +3883,7 @@ class EnphaseBeerCard extends EnphasePowerFactorCard {
     this._lace = Array.from({ length: 18 }, () => [rnd(), 1 + rnd() * 2.6]);
     const inner = `M${bLeft(B_TOP)},${B_TOP} L${bRight(B_TOP)},${B_TOP} L${bRight(B_FLOOR)},${B_FLOOR} L${bLeft(B_FLOOR)},${B_FLOOR} Z`;
     this.shadowRoot.innerHTML = `
-      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${BEER_STYLE}${GLASS}</style>
+      <style>${SIZE_STYLE}${XSTYLE}${PF_STYLE}${BEER_STYLE}${GLASS}${CLEAN}</style>
       <ha-card>
         <div class="top">
           <div class="title">${esc(this._config.title || this._b("title"))}</div>
