@@ -69,7 +69,7 @@
     "step": {
       "meters": {
         "title": "Eigene Zähler (optional)",
-        "description": "Hat dein Gateway keine Stromwandler? Verknüpfe deine eigenen Zähler (zum Beispiel einen Shelly am Solarkreis, einen Shelly 3EM oder einen Smart-Meter-Leser). Die Integration erstellt dann dieselben Entitäten wie mit Stromwandlern: Erzeugung, Verbrauch, Netzbezug und Einspeisung, Eigenverbrauch und Autarkie sowie eine Live-Schätzung je Modul. Lass leer, was du nicht hast. Verknüpfe nur den Leistungssensor eines Zählers: Spannung, Strom, Leistungsfaktor, Schein- und Blindleistung und Frequenz desselben Geräts werden automatisch gefunden. So funktionieren Netzkarte, cos φ und das Bierglas wie mit Enphase-Stromwandlern. Ein einphasiger Zähler reicht.",
+        "description": "Verknüpfe deine eigenen Zähler (zum Beispiel einen Shelly am Solarkreis, einen Shelly 3EM oder einen Smart-Meter-Leser). Die Integration erstellt dann dieselben Entitäten wie mit Stromwandlern: Erzeugung, Verbrauch, Netzbezug und Einspeisung, Eigenverbrauch und Autarkie sowie eine Live-Schätzung je Modul. Lass leer, was du nicht hast. Verknüpfe nur den Leistungssensor eines Zählers: Spannung, Strom, Leistungsfaktor, Schein- und Blindleistung und Frequenz desselben Geräts werden automatisch gefunden. So funktionieren Netzkarte, cos φ und das Bierglas wie mit Enphase-Stromwandlern. Ein einphasiger Zähler reicht. Ein verknüpfter Zähler hat immer Vorrang vor den Messungen des Gateways, weil er schneller ist.",
         "data": {
           "ext_production_power": "Leistung Solarmodule",
           "ext_grid_power": "Netzleistung (positiv = Bezug)",

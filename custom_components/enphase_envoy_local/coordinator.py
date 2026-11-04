@@ -734,13 +734,14 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
     def _apply_external_meters(self, data: EnvoyData) -> None:
         """Fill in what the gateway's own CTs would give, from linked sensors.
 
-        Only what the gateway does not measure itself is taken over, so a
-        metered gateway keeps its own readings.
+        A linked meter always wins over the gateway's own (slower) readings:
+        a Shelly measures every second, the gateway's production comes from
+        reports every few minutes or its CTs.
         """
         opts = self.config_entry.options
         if not any(opts.get(k) for k in (CONF_EXT_PRODUCTION_POWER, CONF_EXT_GRID_POWER, CONF_EXT_GRID_IMPORT, CONF_EXT_GRID_EXPORT, *CONF_EXT_GRID_PHASES)):
             return
-        if not data.production_metered and opts.get(CONF_EXT_PRODUCTION_POWER):
+        if opts.get(CONF_EXT_PRODUCTION_POWER):
             prod = self._ext_meter(
                 CONF_EXT_PRODUCTION_POWER, -1.0 if opts.get(CONF_EXT_PRODUCTION_SIGN) == "negative" else 1.0
             )
@@ -754,8 +755,6 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                 data.production_reactive_power = prod.reactive_power
                 if data.frequency is None:
                     data.frequency = prod.frequency
-        if data.consumption_metered:
-            return
         # Our convention: grid power positive = import, negative = export.
         export_positive = opts.get(CONF_EXT_GRID_SIGN) == "positive" or (
             CONF_EXT_GRID_SIGN not in opts and opts.get(CONF_EXT_GRID_INVERT)
