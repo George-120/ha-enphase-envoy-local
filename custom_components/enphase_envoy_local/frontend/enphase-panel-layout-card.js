@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.25.4";
+const CARD_VERSION = "1.26.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -440,6 +440,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
             { name: "max_height", selector: { text: {} } },
           ],
         },
+        { name: "power_entity", selector: { entity: { domain: "sensor", device_class: "power" } } },
+        POWER_SIGN_FIELD,
         { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } },
       ],
       computeLabel: (s) =>
@@ -453,6 +455,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
           show_labels: "Roof names / Dakvlaknamen",
           show_phase: "Phase badges / Fase-labels",
           live_estimate: "Live estimate between reports / Live schatting tussen meldingen",
+          power_entity: "Own meter, preferred (e.g. Shelly) / Eigen meter als voorkeur (bijv. Shelly)",
+          power_sign: "Meter shows production as / Meter toont opwek als",
           max_height: "Max height / Max. hoogte (optional / optioneel)",
         })[s.name],
     };
@@ -931,7 +935,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
   _liveRows() {
     const hass = this._hass;
     const demo = this._config.demo;
-    return this._modules.map((m, i) => {
+    const rows = this._modules.map((m, i) => {
       const fake = demo ? 0.55 + 0.4 * Math.sin(i * 1.7 + Date.now() / 60000) : null;
       // Between the microinverter reports (about every 15 min) the integration
       // gives a live estimate per panel; the measured value is the fallback.
@@ -947,6 +951,22 @@ class EnphasePanelLayoutCard extends HTMLElement {
       const problem = demo ? i === 13 : isOn(hass, m.underperforming) || noOutput;
       return { m, w, t, eff, dc, wh, perf, perfWeek, problem, noOutput };
     });
+    // Own meter (e.g. a Shelly) as the preferred source: the header shows the
+    // meter and every panel gets its share of it, so the panels follow the
+    // meter in real time instead of the slower microinverter reports.
+    const meter = demo ? null : ownPower(hass, this._config.power_entity, this._config.power_sign);
+    if (meter != null) {
+      const base = rows.map((r) => Math.max(0, r.w || 0));
+      let sum = base.reduce((a, b) => a + b, 0);
+      const weights = sum > 0 ? base : rows.map((r) => r.m.max || 1);
+      sum = weights.reduce((a, b) => a + b, 0) || 1;
+      rows.forEach((r, i) => {
+        const cap = r.m.max ? r.m.max * 1.1 : Infinity;
+        r.w = Math.round(Math.min(cap, (meter * weights[i]) / sum));
+      });
+      rows.meter = meter;
+    }
+    return rows;
   }
 
   _update() {
@@ -963,6 +983,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       if (r.w != null && r.w > 0) active += 1;
       if (r.problem) problems += 1;
     }
+    if (rows.meter != null) total = rows.meter;
     const peak = Math.max(1, ...rows.map((r) => r.w || 0), ...rows.map((r) => (r.m.max || 0) * 0.6));
     const bestToday = Math.max(1, ...rows.map((r) => r.wh || 0));
 
@@ -1687,6 +1708,33 @@ function fmtPower(w) {
   return a >= 1000 ? `${(w / 1000).toFixed(a >= 10000 ? 1 : 2)} kW` : `${Math.round(w)} W`;
 }
 
+const POWER_SIGN_FIELD = {
+  name: "power_sign",
+  selector: {
+    select: {
+      mode: "dropdown",
+      options: [
+        { value: "positive", label: "Positive / Positief" },
+        { value: "negative", label: "Negative / Negatief" },
+      ],
+    },
+  },
+};
+
+// Production power in W from the user's own meter, or null.
+function ownPower(hass, entity, sign) {
+  if (!entity) return null;
+  const st = hass?.states[entity];
+  if (!st) return null;
+  let w = parseFloat(st.state);
+  if (!Number.isFinite(w)) return null;
+  const u = st.attributes.unit_of_measurement;
+  if (u === "kW") w *= 1000;
+  else if (u === "MW") w *= 1e6;
+  if (sign === "negative") w = -w;
+  return Math.max(0, w);
+}
+
 function fmtEnergy(wh, unit) {
   if (wh == null) return "–";
   const kwh = unit === "Wh" ? wh / 1000 : unit === "MWh" ? wh * 1000 : wh;
@@ -1711,8 +1759,10 @@ class EnphaseSystemCard extends HTMLElement {
       schema: [
         { name: "title", selector: { text: {} } },
         { name: "entity", selector: { entity: { domain: "sensor", integration: "enphase_envoy_local" } } },
+        { name: "power_entity", selector: { entity: { domain: "sensor", device_class: "power" } } },
+        POWER_SIGN_FIELD,
       , STYLE_FIELD, SIZE_FIELD, { name: "height", selector: { number: { min: 150, max: 1600, step: 10, unit_of_measurement: "px", mode: "slider" } } }],
-      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", style: "Style / Stijl", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
+      computeLabel: (s) => ({ title: "Title / Titel", entity: "Panel layout sensor / Paneelindeling-sensor", power_entity: "Own production meter, preferred (e.g. Shelly) / Eigen opwekmeter als voorkeur (bijv. Shelly)", power_sign: "Meter shows production as / Meter toont opwek als", style: "Style / Stijl", size: "Size / Grootte", height: "Height / Hoogte (empty = automatic / leeg = automatisch)" })[s.name],
     };
   }
 
@@ -1800,9 +1850,10 @@ class EnphaseSystemCard extends HTMLElement {
     const unit = (k) => hass.states[g[k]]?.attributes.unit_of_measurement;
     const q = (s) => this.shadowRoot.querySelector(s);
 
-    const prod = v("production_power");
-    const cons = v("consumption_power");
+    const own = ownPower(hass, this._config.power_entity, this._config.power_sign);
+    const prod = own ?? v("production_power");
     const net = v("net_power");
+    const cons = own != null && net != null ? Math.max(0, own + net) : v("consumption_power");
     q(".prod").textContent = fmtPower(prod);
     q(".cons").textContent = fmtPower(cons);
     q(".net").textContent = fmtPower(net == null ? null : Math.abs(net));
