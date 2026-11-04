@@ -67,23 +67,6 @@
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Optionen",
-        "data": {
-          "scan_interval": "Aktualisierungsintervall",
-          "inverter_sensors": "Sensoren pro Mikrowechselrichter",
-          "underperform_threshold": "Minderleistungswarnung unter",
-          "forecast": "Solarprognose (Open-Meteo)",
-          "live_estimate": "Live-Schätzung je Modul"
-        },
-        "data_description": {
-          "scan_interval": "Sekunden zwischen den Abfragen (5–300).",
-          "inverter_sensors": "Mikrowechselrichter melden sich etwa alle 5 Minuten.",
-          "underperform_threshold": "Ein Modul wird markiert, wenn es weniger als diesen Prozentsatz dessen erzeugt, was die guten Module auf derselben Dachfläche erzeugen (100 % = so gut wie die besten Module).",
-          "forecast": "Erwartete Erzeugung pro Dachfläche auf Basis der Wettervorhersage von Open-Meteo (kostenlos, ohne Konto; der Standort von Home Assistant wird übermittelt). Wird automatisch anhand der tatsächlichen Erzeugung deiner Module kalibriert.",
-          "live_estimate": "Mikrowechselrichter melden sich etwa alle 15 Minuten. Mit dieser Option bekommt jedes Modul zusätzlich einen Live-Wert: sein Anteil an den letzten Meldungen mal das, was der Erzeugungszähler jetzt misst (alle 10 s)."
-        }
-      },
       "meters": {
         "title": "Eigene Zähler (optional)",
         "description": "Hat dein Gateway keine Stromwandler? Verknüpfe deine eigenen Zähler (zum Beispiel einen Shelly am Solarkreis, einen Shelly 3EM oder einen Smart-Meter-Leser). Die Integration erstellt dann dieselben Entitäten wie mit Stromwandlern: Erzeugung, Verbrauch, Netzbezug und Einspeisung, Eigenverbrauch und Autarkie sowie eine Live-Schätzung je Modul. Lass leer, was du nicht hast. Verknüpfe nur den Leistungssensor eines Zählers: Spannung, Strom, Leistungsfaktor, Schein- und Blindleistung und Frequenz desselben Geräts werden automatisch gefunden. So funktionieren Netzkarte, cos φ und das Bierglas wie mit Enphase-Stromwandlern. Ein einphasiger Zähler reicht.",
@@ -101,6 +84,30 @@
           "ext_production_power": "Ein Leistungssensor (W oder kW), der deine Solarmodule misst, z. B. ein Shelly Pro EM am Solarkreis.",
           "ext_grid_power": "Leistung am Hausanschluss. Leer lassen, wenn du unten die drei Phasen verknüpfst.",
           "ext_grid_import": "Gesamtzähler in kWh, z. B. von einem Smart-Meter-Leser oder Shelly 3EM."
+        }
+      },
+      "general": {
+        "title": "Optionen",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall",
+          "inverter_sensors": "Sensoren pro Mikrowechselrichter",
+          "underperform_threshold": "Minderleistungswarnung unter",
+          "forecast": "Solarprognose (Open-Meteo)",
+          "live_estimate": "Live-Schätzung je Modul"
+        },
+        "data_description": {
+          "scan_interval": "Sekunden zwischen den Abfragen (5–300).",
+          "inverter_sensors": "Mikrowechselrichter melden sich etwa alle 5 Minuten.",
+          "underperform_threshold": "Ein Modul wird markiert, wenn es weniger als diesen Prozentsatz dessen erzeugt, was die guten Module auf derselben Dachfläche erzeugen (100 % = so gut wie die besten Module).",
+          "forecast": "Erwartete Erzeugung pro Dachfläche auf Basis der Wettervorhersage von Open-Meteo (kostenlos, ohne Konto; der Standort von Home Assistant wird übermittelt). Wird automatisch anhand der tatsächlichen Erzeugung deiner Module kalibriert.",
+          "live_estimate": "Mikrowechselrichter melden sich etwa alle 15 Minuten. Mit dieser Option bekommt jedes Modul zusätzlich einen Live-Wert: sein Anteil an den letzten Meldungen mal das, was der Erzeugungszähler jetzt misst (alle 10 s)."
+        }
+      },
+      "init": {
+        "title": "Einstellungen",
+        "menu_options": {
+          "general": "Allgemein",
+          "meters": "Eigene Zähler (Shelly, P1…)"
         }
       }
     }

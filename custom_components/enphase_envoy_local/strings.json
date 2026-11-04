@@ -67,23 +67,6 @@
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Options",
-        "data": {
-          "scan_interval": "Update interval",
-          "inverter_sensors": "Sensors per microinverter",
-          "underperform_threshold": "Underperformance alert below",
-          "forecast": "Solar forecast (Open-Meteo)",
-          "live_estimate": "Live estimate per panel"
-        },
-        "data_description": {
-          "scan_interval": "Seconds between readings (5-300).",
-          "inverter_sensors": "Microinverters report about every 5 minutes.",
-          "underperform_threshold": "A panel is flagged when it produces less than this percentage of what the good panels on the same roof surface produce (100 % = as good as the best panels).",
-          "forecast": "Expected production per roof surface from the Open-Meteo weather forecast (free, no account; the Home Assistant location is sent). Calibrated automatically on what your panels really produce.",
-          "live_estimate": "Microinverters report about every 15 minutes. With this on, every panel also gets a live value: its share of the last reports times what the production meter measures now (every 10 s)."
-        }
-      },
       "meters": {
         "title": "Own meters (optional)",
         "description": "Has your gateway no CTs? Link your own meters (for example a Shelly on the solar group, a Shelly 3EM or a P1 meter). The integration then creates the same entities as with CTs: production, consumption, grid import and export, self-consumption and self-sufficiency, and a live estimate per panel. Leave empty what you do not have. Link only the power sensor of a meter: its voltage, current, power factor, apparent and reactive power and frequency are found on the same device by themselves, so the grid card, cos φ and the beer glass work as with Enphase CTs. A single-phase meter is fine.",
@@ -101,6 +84,30 @@
           "ext_production_power": "A power sensor (W or kW) that measures your solar panels, e.g. a Shelly Pro EM on the solar group.",
           "ext_grid_power": "Power at your main connection. Leave empty when you link the three phases below.",
           "ext_grid_import": "Lifetime counter in kWh, e.g. from a P1 meter or Shelly 3EM."
+        }
+      },
+      "general": {
+        "title": "Options",
+        "data": {
+          "scan_interval": "Update interval",
+          "inverter_sensors": "Sensors per microinverter",
+          "underperform_threshold": "Underperformance alert below",
+          "forecast": "Solar forecast (Open-Meteo)",
+          "live_estimate": "Live estimate per panel"
+        },
+        "data_description": {
+          "scan_interval": "Seconds between readings (5-300).",
+          "inverter_sensors": "Microinverters report about every 5 minutes.",
+          "underperform_threshold": "A panel is flagged when it produces less than this percentage of what the good panels on the same roof surface produce (100 % = as good as the best panels).",
+          "forecast": "Expected production per roof surface from the Open-Meteo weather forecast (free, no account; the Home Assistant location is sent). Calibrated automatically on what your panels really produce.",
+          "live_estimate": "Microinverters report about every 15 minutes. With this on, every panel also gets a live value: its share of the last reports times what the production meter measures now (every 10 s)."
+        }
+      },
+      "init": {
+        "title": "Settings",
+        "menu_options": {
+          "general": "General",
+          "meters": "Own meters (Shelly, P1…)"
         }
       }
     }

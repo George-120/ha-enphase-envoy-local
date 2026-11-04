@@ -360,17 +360,24 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the options."""
+        """Menu: general settings or own meters."""
+        return self.async_show_menu(step_id="init", menu_options=["general", "meters"])
+
+    async def async_step_general(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the general options."""
         if user_input is not None:
             user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
             user_input[CONF_UNDERPERFORM_THRESHOLD] = int(
                 user_input[CONF_UNDERPERFORM_THRESHOLD]
             )
-            self._options = user_input
-            return await self.async_step_meters()
+            options = dict(self.config_entry.options)
+            options.update(user_input)
+            return self.async_create_entry(data=options)
         options = self.config_entry.options
         return self.async_show_form(
-            step_id="init",
+            step_id="general",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -421,7 +428,6 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
                 k: v for k, v in self.config_entry.options.items()
                 if not k.startswith("ext_")
             }
-            options.update(getattr(self, "_options", {}))
             options.update({k: v for k, v in user_input.items() if v not in (None, "")})
             return self.async_create_entry(data=options)
         options = self.config_entry.options

@@ -67,23 +67,6 @@
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Opties",
-        "data": {
-          "scan_interval": "Interval uitlezen",
-          "inverter_sensors": "Sensoren per micro-omvormer",
-          "underperform_threshold": "Melding onderprestatie onder",
-          "forecast": "Opbrengstverwachting (Open-Meteo)",
-          "live_estimate": "Live schatting per paneel"
-        },
-        "data_description": {
-          "scan_interval": "Seconden tussen metingen (5-300).",
-          "inverter_sensors": "Micro-omvormers melden zich ongeveer elke 5 minuten.",
-          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van wat de goede panelen op hetzelfde dakvlak opleveren (100 % = net zo goed als de beste).",
-          "forecast": "Verwachte opbrengst per dakvlak op basis van de weersverwachting van Open-Meteo (gratis, zonder account; de locatie van Home Assistant wordt meegestuurd). Wordt automatisch gekalibreerd op wat je panelen echt opleveren.",
-          "live_estimate": "Micro-omvormers melden zich ongeveer elke 15 minuten. Met deze optie krijgt elk paneel ook een live waarde: zijn aandeel in de laatste meldingen maal wat de productiemeter nu meet (elke 10 s)."
-        }
-      },
       "meters": {
         "title": "Eigen meters (optioneel)",
         "description": "Heeft je gateway geen CT's? Koppel dan je eigen meters (bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter). De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik en zelfvoorzienend, en een live schatting per paneel. Laat leeg wat je niet hebt. Koppel alleen de vermogenssensor van een meter: spanning, stroom, arbeidsfactor, schijnbaar en blindvermogen en frequentie van datzelfde apparaat worden vanzelf gevonden. Zo werken de netkaart, cos φ en het glas bier net als met Enphase-CT's. Een 1-fase meter is prima.",
@@ -101,6 +84,30 @@
           "ext_production_power": "Een vermogenssensor (W of kW) die je zonnepanelen meet, bijvoorbeeld een Shelly Pro EM op de zonnepanelengroep.",
           "ext_grid_power": "Vermogen op je hoofdaansluiting. Laat leeg als je hieronder de drie fasen koppelt.",
           "ext_grid_import": "Totaalteller in kWh, bijvoorbeeld van een P1-meter of Shelly 3EM."
+        }
+      },
+      "general": {
+        "title": "Opties",
+        "data": {
+          "scan_interval": "Interval uitlezen",
+          "inverter_sensors": "Sensoren per micro-omvormer",
+          "underperform_threshold": "Melding onderprestatie onder",
+          "forecast": "Opbrengstverwachting (Open-Meteo)",
+          "live_estimate": "Live schatting per paneel"
+        },
+        "data_description": {
+          "scan_interval": "Seconden tussen metingen (5-300).",
+          "inverter_sensors": "Micro-omvormers melden zich ongeveer elke 5 minuten.",
+          "underperform_threshold": "Een paneel krijgt een melding als het minder oplevert dan dit percentage van wat de goede panelen op hetzelfde dakvlak opleveren (100 % = net zo goed als de beste).",
+          "forecast": "Verwachte opbrengst per dakvlak op basis van de weersverwachting van Open-Meteo (gratis, zonder account; de locatie van Home Assistant wordt meegestuurd). Wordt automatisch gekalibreerd op wat je panelen echt opleveren.",
+          "live_estimate": "Micro-omvormers melden zich ongeveer elke 15 minuten. Met deze optie krijgt elk paneel ook een live waarde: zijn aandeel in de laatste meldingen maal wat de productiemeter nu meet (elke 10 s)."
+        }
+      },
+      "init": {
+        "title": "Instellingen",
+        "menu_options": {
+          "general": "Algemeen",
+          "meters": "Eigen meters (Shelly, P1…)"
         }
       }
     }
