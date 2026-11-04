@@ -29,6 +29,13 @@ TOKEN_RENEW_BEFORE: Final = timedelta(days=30)
 LOGIN_BACKOFF_MINUTES: Final = (1, 2, 5, 10, 30, 60)
 
 CONF_UNDERPERFORM_THRESHOLD: Final = "underperform_threshold"
+# Own meters (e.g. a Shelly) for systems without CTs in the gateway.
+CONF_EXT_PRODUCTION_POWER: Final = "ext_production_power"
+CONF_EXT_GRID_POWER: Final = "ext_grid_power"
+CONF_EXT_GRID_INVERT: Final = "ext_grid_invert"
+CONF_EXT_GRID_IMPORT: Final = "ext_grid_import"
+CONF_EXT_GRID_EXPORT: Final = "ext_grid_export"
+CONF_EXT_GRID_PHASES: Final = ("ext_grid_power_l1", "ext_grid_power_l2", "ext_grid_power_l3")
 CONF_LIVE_ESTIMATE: Final = "live_estimate"  # live power per panel from the production meter
 CONF_FORECAST: Final = "forecast"  # calibrated solar forecast via Open-Meteo
 FORECAST_INTERVAL: Final = timedelta(minutes=30)

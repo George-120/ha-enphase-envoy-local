@@ -23,6 +23,7 @@ from .api import (
     EnvoyClient,
     EnvoyData,
     EnvoyError,
+    PhaseData,
     merge_device_data,
     merge_inventory,
     parse_home,
@@ -36,6 +37,12 @@ from .const import (
     NO_OUTPUT_ALERT,
     CONF_FIRMWARE,
     CONF_INVERTER_SENSORS,
+    CONF_EXT_GRID_EXPORT,
+    CONF_EXT_GRID_IMPORT,
+    CONF_EXT_GRID_INVERT,
+    CONF_EXT_GRID_PHASES,
+    CONF_EXT_GRID_POWER,
+    CONF_EXT_PRODUCTION_POWER,
     CONF_LIVE_ESTIMATE,
     CONF_SCAN_INTERVAL,
     CONF_SERIAL,
@@ -92,7 +99,7 @@ def _estimate_live(data, hourly: dict | None = None) -> None:
     """
     reported = {s: i.power for s, i in data.inverters.items() if i.power is not None and i.power >= 0}
     total = sum(reported.values())
-    meter = data.production_power if data.production_metered else None
+    meter = data.production_power if (data.production_metered or data.production_external) else None
     now = dt_util.utcnow()
     for serial, inv in data.inverters.items():
         if serial not in reported:
@@ -343,6 +350,7 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                 ]
                 if today:
                     data.production_today = float(sum(today))
+        self._apply_external_meters(data)
         data.network = parse_home(self._last_home)
         data.export_limit_enabled = (
             bool(self._last_pel) if self._last_pel is not None else None
@@ -628,6 +636,61 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         data.minutes_above_250v_today = round(ext.get("above", 0), 1) if volts or ext.get("above") else None
         if changed:
             self._store.async_delay_save(lambda: self._daily, 60)
+
+    def _ext_value(self, key: str, energy: bool = False) -> float | None:
+        """A linked Home Assistant sensor in W (or Wh for energy)."""
+        entity_id = self.config_entry.options.get(key)
+        state = self.hass.states.get(entity_id) if entity_id else None
+        if state is None:
+            return None
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            return None
+        unit = state.attributes.get("unit_of_measurement")
+        factor = (
+            {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0} if energy
+            else {"W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
+        ).get(unit, 1.0)
+        return value * factor
+
+    def _apply_external_meters(self, data: EnvoyData) -> None:
+        """Fill in what the gateway's own CTs would give, from linked sensors.
+
+        Only what the gateway does not measure itself is taken over, so a
+        metered gateway keeps its own readings.
+        """
+        opts = self.config_entry.options
+        if not any(opts.get(k) for k in (CONF_EXT_PRODUCTION_POWER, CONF_EXT_GRID_POWER, CONF_EXT_GRID_IMPORT, CONF_EXT_GRID_EXPORT, *CONF_EXT_GRID_PHASES)):
+            return
+        if not data.production_metered and opts.get(CONF_EXT_PRODUCTION_POWER):
+            power = self._ext_value(CONF_EXT_PRODUCTION_POWER)
+            if power is not None:
+                data.production_power = max(0.0, power)
+                data.production_external = True
+        if data.consumption_metered:
+            return
+        sign = -1.0 if opts.get(CONF_EXT_GRID_INVERT) else 1.0
+        grid = self._ext_value(CONF_EXT_GRID_POWER)
+        phases = [self._ext_value(k) for k in CONF_EXT_GRID_PHASES]
+        if grid is None and any(p is not None for p in phases):
+            grid = sum(p for p in phases if p is not None)
+        if grid is not None:
+            data.net_power = round(grid * sign, 1)
+            if data.production_power is not None:
+                data.consumption_power = round(max(0.0, data.production_power + data.net_power), 1)
+            data.consumption_metered = True
+        if any(p is not None for p in phases):
+            data.net_phases = [PhaseData(power=None if p is None else round(p * sign, 1)) for p in phases]
+        imp = self._ext_value(CONF_EXT_GRID_IMPORT, energy=True)
+        exp = self._ext_value(CONF_EXT_GRID_EXPORT, energy=True)
+        if imp is not None:
+            data.grid_import_lifetime = imp
+        if exp is not None:
+            data.grid_export_lifetime = exp
+        if imp is not None and exp is not None and data.production_lifetime is not None:
+            data.consumption_lifetime = data.production_lifetime + imp - exp
+            data.consumption_metered = True
 
     def _apply_daily(self, data: EnvoyData) -> None:
         """Fill in 'today' from the lifetime counters, reset at local midnight.

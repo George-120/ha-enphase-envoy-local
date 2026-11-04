@@ -146,6 +146,7 @@ class EnvoyData:
     production_lifetime: float | None = None
     active_inverters: int | None = None
     production_metered: bool = False
+    production_external: bool = False  # production power from an own meter
     production_phases: list[PhaseData] = field(default_factory=list)
 
     consumption_metered: bool = False

@@ -19,6 +19,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -44,6 +46,12 @@ from .api import (
 from .const import (
     CONF_FIRMWARE,
     CONF_FORECAST,
+    CONF_EXT_GRID_EXPORT,
+    CONF_EXT_GRID_IMPORT,
+    CONF_EXT_GRID_INVERT,
+    CONF_EXT_GRID_PHASES,
+    CONF_EXT_GRID_POWER,
+    CONF_EXT_PRODUCTION_POWER,
     CONF_LIVE_ESTIMATE,
     CONF_INVERTER_SENSORS,
     CONF_SCAN_INTERVAL,
@@ -358,7 +366,8 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
             user_input[CONF_UNDERPERFORM_THRESHOLD] = int(
                 user_input[CONF_UNDERPERFORM_THRESHOLD]
             )
-            return self.async_create_entry(data=user_input)
+            self._options = user_input
+            return await self.async_step_meters()
         options = self.config_entry.options
         return self.async_show_form(
             step_id="init",
@@ -402,3 +411,35 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
                 }
             ),
         )
+
+    async def async_step_meters(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Own meters (a Shelly, a P1 meter...) when the gateway has no CTs."""
+        if user_input is not None:
+            options = {
+                k: v for k, v in self.config_entry.options.items()
+                if not k.startswith("ext_")
+            }
+            options.update(getattr(self, "_options", {}))
+            options.update({k: v for k, v in user_input.items() if v not in (None, "")})
+            return self.async_create_entry(data=options)
+        options = self.config_entry.options
+        power = EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power"))
+        energy = EntitySelector(EntitySelectorConfig(domain="sensor", device_class="energy"))
+
+        def opt(key: str):
+            return vol.Optional(key, description={"suggested_value": options.get(key)})
+
+        schema = {
+            opt(CONF_EXT_PRODUCTION_POWER): power,
+            opt(CONF_EXT_GRID_POWER): power,
+            vol.Required(
+                CONF_EXT_GRID_INVERT, default=options.get(CONF_EXT_GRID_INVERT, False)
+            ): BooleanSelector(),
+            opt(CONF_EXT_GRID_IMPORT): energy,
+            opt(CONF_EXT_GRID_EXPORT): energy,
+        }
+        for key in CONF_EXT_GRID_PHASES:
+            schema[opt(key)] = power
+        return self.async_show_form(step_id="meters", data_schema=vol.Schema(schema))

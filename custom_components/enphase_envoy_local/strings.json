@@ -83,6 +83,25 @@
           "forecast": "Expected production per roof surface from the Open-Meteo weather forecast (free, no account; the Home Assistant location is sent). Calibrated automatically on what your panels really produce.",
           "live_estimate": "Microinverters report about every 15 minutes. With this on, every panel also gets a live value: its share of the last reports times what the production meter measures now (every 10 s)."
         }
+      },
+      "meters": {
+        "title": "Own meters (optional)",
+        "description": "Has your gateway no CTs? Link your own meters (for example a Shelly on the solar group, a Shelly 3EM or a P1 meter). The integration then creates the same entities as with CTs: production, consumption, grid import and export, self-consumption and self-sufficiency, and a live estimate per panel. Leave empty what you do not have.",
+        "data": {
+          "ext_production_power": "Solar production power",
+          "ext_grid_power": "Grid power (positive = import)",
+          "ext_grid_invert": "Grid sensor is positive when exporting",
+          "ext_grid_import": "Grid import energy (total)",
+          "ext_grid_export": "Grid export energy (total)",
+          "ext_grid_power_l1": "Grid power L1",
+          "ext_grid_power_l2": "Grid power L2",
+          "ext_grid_power_l3": "Grid power L3"
+        },
+        "data_description": {
+          "ext_production_power": "A power sensor (W or kW) that measures your solar panels, e.g. a Shelly Pro EM on the solar group.",
+          "ext_grid_power": "Power at your main connection. Leave empty when you link the three phases below.",
+          "ext_grid_import": "Lifetime counter in kWh, e.g. from a P1 meter or Shelly 3EM."
+        }
       }
     }
   },

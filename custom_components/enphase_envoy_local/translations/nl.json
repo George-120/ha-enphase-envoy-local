@@ -83,6 +83,25 @@
           "forecast": "Verwachte opbrengst per dakvlak op basis van de weersverwachting van Open-Meteo (gratis, zonder account; de locatie van Home Assistant wordt meegestuurd). Wordt automatisch gekalibreerd op wat je panelen echt opleveren.",
           "live_estimate": "Micro-omvormers melden zich ongeveer elke 15 minuten. Met deze optie krijgt elk paneel ook een live waarde: zijn aandeel in de laatste meldingen maal wat de productiemeter nu meet (elke 10 s)."
         }
+      },
+      "meters": {
+        "title": "Eigen meters (optioneel)",
+        "description": "Heeft je gateway geen CT's? Koppel dan je eigen meters (bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter). De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik en zelfvoorzienend, en een live schatting per paneel. Laat leeg wat je niet hebt.",
+        "data": {
+          "ext_production_power": "Vermogen zonnepanelen",
+          "ext_grid_power": "Netvermogen (positief = afname)",
+          "ext_grid_invert": "Netsensor is positief bij teruglevering",
+          "ext_grid_import": "Netafname energie (totaal)",
+          "ext_grid_export": "Netlevering energie (totaal)",
+          "ext_grid_power_l1": "Netvermogen L1",
+          "ext_grid_power_l2": "Netvermogen L2",
+          "ext_grid_power_l3": "Netvermogen L3"
+        },
+        "data_description": {
+          "ext_production_power": "Een vermogenssensor (W of kW) die je zonnepanelen meet, bijvoorbeeld een Shelly Pro EM op de zonnepanelengroep.",
+          "ext_grid_power": "Vermogen op je hoofdaansluiting. Laat leeg als je hieronder de drie fasen koppelt.",
+          "ext_grid_import": "Totaalteller in kWh, bijvoorbeeld van een P1-meter of Shelly 3EM."
+        }
       }
     }
   },
