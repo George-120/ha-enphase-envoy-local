@@ -239,6 +239,39 @@
       },
       "grid_phase_apparent_power": {
         "default": "mdi:flash-triangle"
+      },
+      "production_yesterday": {
+        "default": "mdi:solar-power-variant"
+      },
+      "consumption_yesterday": {
+        "default": "mdi:home-lightning-bolt"
+      },
+      "grid_import_yesterday": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "grid_export_yesterday": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "solar_self_use_power": {
+        "default": "mdi:home-import-outline"
+      },
+      "grid_voltage_spread": {
+        "default": "mdi:sine-wave"
+      },
+      "weakest_panel_performance": {
+        "default": "mdi:solar-panel"
+      },
+      "weakest_panel": {
+        "default": "mdi:solar-panel"
+      },
+      "forecast_next_hour": {
+        "default": "mdi:weather-sunny-alert"
+      },
+      "forecast_best_hour_tomorrow": {
+        "default": "mdi:clock-star-four-points"
+      },
+      "forecast_accuracy_yesterday": {
+        "default": "mdi:bullseye-arrow"
       }
     },
     "binary_sensor": {
@@ -283,6 +316,9 @@
         "state": {
           "on": "mdi:power-plug-off-outline"
         }
+      },
+      "grid_voltage_high": {
+        "default": "mdi:flash-alert"
       }
     },
     "button": {

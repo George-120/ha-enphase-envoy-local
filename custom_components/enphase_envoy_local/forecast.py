@@ -92,6 +92,9 @@ class ForecastData:
     tomorrow: float | None = None
     day_after: float | None = None
     so_far: float | None = None  # kWh expected until now today
+    yesterday: float | None = None  # kWh the forecast gave for yesterday
+    next_hour: float | None = None  # Wh expected in the next full hour
+    best_hour_tomorrow: datetime | None = None  # start of tomorrow's sunniest hour
     power_now: float | None = None  # W
     calibration: dict[str, dict[str, Any]] = field(default_factory=dict)
     updated: datetime | None = None
@@ -747,12 +750,21 @@ class SolarForecast:
         for moment, value in hourly.items():
             if moment - timedelta(hours=1) < now < moment:
                 current = value
+        next_end = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=2)
+        tomorrow = [
+            (v, t) for t, v in hourly.items()
+            if start + timedelta(days=1) < t <= start + timedelta(days=2)
+        ]
+        best = max(tomorrow) if tomorrow else None
         self.data = ForecastData(
             hourly={t: round(v, 1) for t, v in sorted(hourly.items())},
             today=day_kwh(0),
             tomorrow=day_kwh(1),
             day_after=day_kwh(2),
             so_far=round(so_far / 1000, 2),
+            yesterday=day_kwh(-1),
+            next_hour=round(hourly.get(next_end, 0.0), 0) if next_end in hourly else None,
+            best_hour_tomorrow=best[1] - timedelta(hours=1) if best and best[0] > 0 else None,
             power_now=round(current, 0),
             calibration=calibration,
             updated=now,

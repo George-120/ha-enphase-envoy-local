@@ -52,7 +52,7 @@ STORAGE_VERSION = 1
 METER_RETRY = timedelta(minutes=15)
 INVENTORY_INTERVAL = timedelta(minutes=15)
 SLOW_INTERVAL = timedelta(minutes=5)
-SEED_VERSION = 2  # bump to take the start of today from the recorder again
+SEED_VERSION = 3  # bump to take the start of today from the recorder again
 FREQ_RANGE = (49.0, 51.0)  # outside this a reading is a glitch, not the grid
 LAYOUT_MAX_AGE = timedelta(days=7)
 
@@ -582,10 +582,23 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         """
         today = dt_util.now().date().isoformat()
         if self._daily.get("date") != today:
+            # Close the day: what each counter made since its start of day.
+            closed: dict[str, float] = {}
+            for name, lifetime_attr, _ in DAILY_COUNTERS:
+                start = (self._daily.get("base") or {}).get(name)
+                lifetime = getattr(data, lifetime_attr)
+                if start is not None and lifetime is not None and lifetime >= start:
+                    closed[name] = round(lifetime - start, 1)
+            yesterday_date = (dt_util.now().date() - timedelta(days=1)).isoformat()
             self._daily = {
                 "date": today,
                 "base": {},
                 "efficiency": self._daily.get("efficiency", {}),
+                "yesterday": (
+                    {"date": yesterday_date, **closed}
+                    if self._daily.get("date") == yesterday_date and closed
+                    else {}
+                ),
             }
         base: dict[str, float] = self._daily.setdefault("base", {})
         changed = False
@@ -608,6 +621,11 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             setattr(data, today_attr, round(lifetime - start, 3))
         if changed:
             self._store.async_delay_save(lambda: self._daily, 30)
+        yesterday = self._daily.get("yesterday") or {}
+        for name, _, today_attr in DAILY_COUNTERS:
+            value = yesterday.get(name)
+            if value is not None:
+                setattr(data, today_attr.replace("_today", "_yesterday"), value)
         if self._daily.get("seeded") != f"{today}/{SEED_VERSION}" and not self._seeding:
             self._seeding = True
             self.config_entry.async_create_background_task(
@@ -673,6 +691,29 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     if abs(base.get(name, -1e12) - number) > 1:
                         _LOGGER.debug("Start of day for %s from the recorder: %s Wh", name, number)
                     base[name] = number
+
+        # Yesterday's totals from the daily statistics, when the day was not closed here.
+        if ids and not (self._daily.get("yesterday") or {}).get("production"):
+            days = await get_instance(self.hass).async_add_executor_job(
+                statistics_during_period,
+                self.hass, midnight - timedelta(days=1), midnight, set(ids), "day", None, {"change"},
+            )
+            closed: dict[str, float] = {}
+            for name, entity_id in counters.items():
+                rows = days.get(entity_id) if entity_id else None
+                current = self.hass.states.get(entity_id) if entity_id else None
+                if not rows or current is None or rows[-1].get("change") is None:
+                    continue
+                scale = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}.get(
+                    current.attributes.get("unit_of_measurement"), 1.0
+                )
+                value = float(rows[-1]["change"]) * scale
+                if 0 <= value < 500_000:
+                    closed[name] = round(value, 1)
+            if closed:
+                self._daily["yesterday"] = {
+                    "date": (dt_util.now().date() - timedelta(days=1)).isoformat(), **closed
+                }
 
         # Peaks and extremes of today from the 5-minute statistics.
         keys = {

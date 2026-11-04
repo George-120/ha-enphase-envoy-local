@@ -179,6 +179,11 @@ class EnvoyData:
     frequency_min_today: float | None = None
     frequency_max_today: float | None = None
     response_time: float | None = None  # ms for production.json
+    # Totals of yesterday, kept by the coordinator.
+    production_yesterday: float | None = None  # Wh
+    consumption_yesterday: float | None = None
+    grid_import_yesterday: float | None = None
+    grid_export_yesterday: float | None = None
 
     reading_time: datetime | None = None
     inverters: dict[str, InverterData] = field(default_factory=dict)

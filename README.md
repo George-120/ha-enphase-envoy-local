@@ -1,23 +1,19 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/George-120/ha-enphase-envoy-local/main/images/logo.png" alt="Enphase Envoy Local" width="480">
-</p>
+<h1><img src="https://raw.githubusercontent.com/George-120/ha-enphase-envoy-local/main/custom_components/enphase_envoy_local/brand/icon.png" alt="" width="56" height="56" align="absmiddle"> Enphase Envoy Local</h1>
 
-<p align="center">
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=George-120&repository=ha-enphase-envoy-local&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open in HACS"></a>
-  <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=enphase_envoy_local"><img src="https://my.home-assistant.io/badges/config_flow_start.svg" alt="Add integration"></a>
-</p>
+Je Enphase-zonnepanelen live en lokaal in Home Assistant: elk paneel op zijn echte plek op het dak (de
+paneelindeling komt automatisch uit Enphase Enlighten), een opbrengstverwachting die van je eigen panelen leert,
+het Energiedashboard en negen kaarten. Geen cloud nodig voor de metingen.
+*Your Enphase panels live and local in Home Assistant, with the panel layout from Enlighten. ·
+Deine Enphase-Module live und lokal in Home Assistant, mit der Modulanordnung aus Enlighten.*
 
-<p align="center">
-  <a href="https://hacs.xyz/"><img src="https://img.shields.io/badge/HACS-Custom-41BDF5.svg" alt="HACS"></a>
-  <a href="https://github.com/George-120/ha-enphase-envoy-local/releases"><img src="https://img.shields.io/github/v/release/George-120/ha-enphase-envoy-local" alt="Release"></a>
-  <img src="https://img.shields.io/badge/languages-NL%20%7C%20EN%20%7C%20DE-orange" alt="NL EN DE">
-</p>
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=George-120&repository=ha-enphase-envoy-local&category=integration)
+[![Integratie toevoegen](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=enphase_envoy_local)
 
-<p align="center">
-  <b><a href="#-nederlands">🇳🇱 Nederlands</a></b> ·
-  <b><a href="#-english">🇬🇧 English</a></b> ·
-  <b><a href="#-deutsch">🇩🇪 Deutsch</a></b>
-</p>
+[![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![Release](https://img.shields.io/github/v/release/George-120/ha-enphase-envoy-local)](https://github.com/George-120/ha-enphase-envoy-local/releases)
+![NL EN DE](https://img.shields.io/badge/languages-NL%20%7C%20EN%20%7C%20DE-orange)
+
+**Taal / Language / Sprache:** [🇳🇱 Nederlands](#-nederlands) · [🇬🇧 English](#-english) · [🇩🇪 Deutsch](#-deutsch)
 
 ---
 
@@ -274,6 +270,9 @@ Daarna staan de kaarten in de kaartkiezer (zoek op "Enphase"). Zie je ze nog nie
 - Blindvermogen, schijnbaar vermogen en arbeidsfactor van net en productie, ook per fase; fase-onbalans
 - DC-vermogen van alle panelen, omzettingsverlies, rendement van alle omvormers samen, gemiddelde en hoogste
   omvormertemperatuur, oudste omvormermelding en reactietijd van de gateway
+- Productie, verbruik, afname en teruglevering van **gisteren**; **zonnestroom direct gebruikt** (W); spanningsverschil tussen de fasen; **zwakste paneel** en zijn prestatie
+- Verwachting **komend uur**, **beste uur morgen** (handig voor automatiseringen: wasmachine aan op het zonnigste uur) en **nauwkeurigheid van de verwachting gisteren**
+- Binaire sensor **Netspanning hoog** (boven 250 V)
 
 **De kaarten zelf instellen**
 - Elke kaart heeft **Grootte** (Klein, Middel, Groot, Volle breedte) en een **Hoogte**-schuif (leeg = zo hoog
@@ -367,6 +366,9 @@ yet (in the app: restart the app).
 - Reactive power, apparent power and power factor of the grid and the production, also per phase; phase imbalance
 - DC power of all panels, conversion losses, efficiency of all microinverters together, average and highest
   inverter temperature, oldest inverter report and gateway response time
+- Production, consumption, import and export of **yesterday**; **solar used directly** (W); voltage difference between phases; **weakest panel** and its performance
+- Forecast **next hour**, **sunniest hour tomorrow** (handy for automations: start the washing machine in the sunniest hour) and **forecast accuracy yesterday**
+- Binary sensor **Grid voltage high** (above 250 V)
 
 **Setting up the cards**
 - Every card has a **Size** (Small, Medium, Large, Full width) and a **Height** slider (empty = as high as the
@@ -459,6 +461,9 @@ Strg+F5 drücken (in der App: App neu starten).
 - Blindleistung, Scheinleistung und Leistungsfaktor von Netz und Erzeugung, auch je Phase; Phasenschieflast
 - DC-Leistung aller Module, Umwandlungsverlust, Wirkungsgrad aller Wechselrichter zusammen, mittlere und höchste
   Wechselrichtertemperatur, älteste Wechselrichtermeldung und Antwortzeit des Gateways
+- Erzeugung, Verbrauch, Bezug und Einspeisung von **gestern**; **Solarstrom direkt genutzt** (W); Spannungsunterschied zwischen den Phasen; **schwächstes Modul** und seine Leistung
+- Prognose **nächste Stunde**, **sonnigste Stunde morgen** (praktisch für Automationen: Waschmaschine zur sonnigsten Stunde starten) und **Prognosegenauigkeit gestern**
+- Binärsensor **Netzspannung hoch** (über 250 V)
 
 **Karten einstellen**
 - Jede Karte hat **Größe** (Klein, Mittel, Groß, Volle Breite) und einen **Höhe**-Regler (leer = so hoch wie der

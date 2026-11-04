@@ -339,6 +339,39 @@
       },
       "grid_phase_apparent_power": {
         "name": "Scheinleistung Netz {phase}"
+      },
+      "production_yesterday": {
+        "name": "Erzeugung gestern"
+      },
+      "consumption_yesterday": {
+        "name": "Verbrauch gestern"
+      },
+      "grid_import_yesterday": {
+        "name": "Netzbezug gestern"
+      },
+      "grid_export_yesterday": {
+        "name": "Einspeisung gestern"
+      },
+      "solar_self_use_power": {
+        "name": "Solarstrom direkt genutzt"
+      },
+      "grid_voltage_spread": {
+        "name": "Spannungsunterschied zwischen Phasen"
+      },
+      "weakest_panel_performance": {
+        "name": "Leistung schwächstes Modul"
+      },
+      "weakest_panel": {
+        "name": "Schwächstes Modul"
+      },
+      "forecast_next_hour": {
+        "name": "Prognose nächste Stunde"
+      },
+      "forecast_best_hour_tomorrow": {
+        "name": "Sonnigste Stunde morgen"
+      },
+      "forecast_accuracy_yesterday": {
+        "name": "Prognosegenauigkeit gestern"
       }
     },
     "binary_sensor": {
@@ -362,6 +395,9 @@
       },
       "inverter_no_output": {
         "name": "Keine Erzeugung"
+      },
+      "grid_voltage_high": {
+        "name": "Netzspannung hoch"
       }
     },
     "button": {

@@ -339,6 +339,39 @@
       },
       "grid_phase_apparent_power": {
         "name": "Grid apparent power {phase}"
+      },
+      "production_yesterday": {
+        "name": "Production yesterday"
+      },
+      "consumption_yesterday": {
+        "name": "Consumption yesterday"
+      },
+      "grid_import_yesterday": {
+        "name": "Grid import yesterday"
+      },
+      "grid_export_yesterday": {
+        "name": "Grid export yesterday"
+      },
+      "solar_self_use_power": {
+        "name": "Solar used directly"
+      },
+      "grid_voltage_spread": {
+        "name": "Voltage difference between phases"
+      },
+      "weakest_panel_performance": {
+        "name": "Weakest panel performance"
+      },
+      "weakest_panel": {
+        "name": "Weakest panel"
+      },
+      "forecast_next_hour": {
+        "name": "Forecast next hour"
+      },
+      "forecast_best_hour_tomorrow": {
+        "name": "Sunniest hour tomorrow"
+      },
+      "forecast_accuracy_yesterday": {
+        "name": "Forecast accuracy yesterday"
       }
     },
     "binary_sensor": {
@@ -362,6 +395,9 @@
       },
       "inverter_no_output": {
         "name": "No output"
+      },
+      "grid_voltage_high": {
+        "name": "Grid voltage high"
       }
     },
     "button": {

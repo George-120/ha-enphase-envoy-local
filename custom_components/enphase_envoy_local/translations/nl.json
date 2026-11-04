@@ -339,6 +339,39 @@
       },
       "grid_phase_apparent_power": {
         "name": "Schijnbaar vermogen net {phase}"
+      },
+      "production_yesterday": {
+        "name": "Productie gisteren"
+      },
+      "consumption_yesterday": {
+        "name": "Verbruik gisteren"
+      },
+      "grid_import_yesterday": {
+        "name": "Netafname gisteren"
+      },
+      "grid_export_yesterday": {
+        "name": "Netlevering gisteren"
+      },
+      "solar_self_use_power": {
+        "name": "Zonnestroom direct gebruikt"
+      },
+      "grid_voltage_spread": {
+        "name": "Spanningsverschil tussen fasen"
+      },
+      "weakest_panel_performance": {
+        "name": "Prestatie zwakste paneel"
+      },
+      "weakest_panel": {
+        "name": "Zwakste paneel"
+      },
+      "forecast_next_hour": {
+        "name": "Verwachting komend uur"
+      },
+      "forecast_best_hour_tomorrow": {
+        "name": "Beste uur morgen"
+      },
+      "forecast_accuracy_yesterday": {
+        "name": "Nauwkeurigheid verwachting gisteren"
       }
     },
     "binary_sensor": {
@@ -362,6 +395,9 @@
       },
       "inverter_no_output": {
         "name": "Geen opbrengst"
+      },
+      "grid_voltage_high": {
+        "name": "Netspanning hoog"
       }
     },
     "button": {

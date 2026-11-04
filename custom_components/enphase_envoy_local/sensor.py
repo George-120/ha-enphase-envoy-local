@@ -361,6 +361,30 @@ FORECAST_SENSORS: tuple[ForecastSensorDescription, ...] = (
     ),
 )
 
+FORECAST_EXTRA: tuple[ForecastSensorDescription, ...] = (
+    ForecastSensorDescription(
+        key="forecast_next_hour",
+        translation_key="forecast_next_hour",
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=0,
+        value_fn=lambda f: f.next_hour,
+    ),
+    ForecastSensorDescription(
+        key="forecast_best_hour_tomorrow",
+        translation_key="forecast_best_hour_tomorrow",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda f: f.best_hour_tomorrow,
+    ),
+)
+
+FORECAST_ACCURACY = SensorEntityDescription(
+    key="forecast_accuracy_yesterday",
+    translation_key="forecast_accuracy_yesterday",
+    native_unit_of_measurement=PERCENTAGE,
+    suggested_display_precision=0,
+)
+
 FORECAST_VS_ACTUAL = SensorEntityDescription(
     key="forecast_performance",
     translation_key="forecast_performance",
@@ -551,6 +575,34 @@ def _oldest_report(d: EnvoyData) -> float | None:
     return round((datetime.now(tz=min(times).tzinfo) - min(times)).total_seconds() / 60, 1)
 
 
+def _weakest(d: EnvoyData):
+    rated = [(i.performance, s) for s, i in d.inverters.items() if i.performance is not None]
+    return min(rated) if rated else None
+
+
+def _volts(d: EnvoyData) -> list[float]:
+    return [p.voltage for p in d.grid_phases or d.production_phases if p.voltage]
+
+
+def _self_use(d: EnvoyData) -> float | None:
+    if d.production_power is None or d.consumption_power is None:
+        return None
+    return round(max(0.0, min(d.production_power, d.consumption_power)), 0)
+
+
+def _yesterday(key: str, value_fn: ValueFn, lifetime_fn: ValueFn) -> EnvoySensorDescription:
+    return EnvoySensorDescription(
+        key=key,
+        translation_key=key,
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        suggested_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=2,
+        value_fn=value_fn,
+        exists_fn=lambda d: lifetime_fn(d) is not None,
+    )
+
+
 def _imbalance(d: EnvoyData) -> float | None:
     currents = [p.current for p in d.grid_phases if p.current is not None]
     return round(max(currents) - min(currents), 2) if len(currents) >= 2 else None
@@ -572,6 +624,45 @@ def _volt(key: str, value_fn: ValueFn, **kw) -> EnvoySensorDescription:
 
 # For the curious: everything the meters and microinverters tell us.
 NERD_SENSORS: tuple[EnvoySensorDescription, ...] = (
+    _yesterday("production_yesterday", lambda d: d.production_yesterday, lambda d: d.production_lifetime),
+    _yesterday("consumption_yesterday", lambda d: d.consumption_yesterday, lambda d: d.consumption_lifetime),
+    _yesterday("grid_import_yesterday", lambda d: d.grid_import_yesterday, lambda d: d.grid_import_lifetime),
+    _yesterday("grid_export_yesterday", lambda d: d.grid_export_yesterday, lambda d: d.grid_export_lifetime),
+    EnvoySensorDescription(
+        key="solar_self_use_power",
+        translation_key="solar_self_use_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=_self_use,
+        exists_fn=lambda d: d.consumption_power is not None and d.production_power is not None,
+    ),
+    EnvoySensorDescription(
+        key="grid_voltage_spread",
+        translation_key="grid_voltage_spread",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda d: round(max(_volts(d)) - min(_volts(d)), 1) if len(_volts(d)) >= 2 else None,
+        exists_fn=lambda d: len(_volts(d)) >= 2,
+    ),
+    EnvoySensorDescription(
+        key="weakest_panel_performance",
+        translation_key="weakest_panel_performance",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda d: _weakest(d)[0] if _weakest(d) else None,
+        exists_fn=lambda d: len(d.inverters) >= 2,
+    ),
+    EnvoySensorDescription(
+        key="weakest_panel",
+        translation_key="weakest_panel",
+        value_fn=lambda d: _weakest(d)[1] if _weakest(d) else None,
+        exists_fn=lambda d: len(d.inverters) >= 2,
+    ),
     _volt("grid_voltage_max_today", lambda d: d.grid_voltage_max_today),
     _volt("grid_voltage_min_today", lambda d: d.grid_voltage_min_today),
     EnvoySensorDescription(
@@ -813,8 +904,9 @@ async def async_setup_entry(
     if data.inverters:
         entities.append(EnvoyLayoutSensor(coordinator, LAYOUT_SENSOR))
     if coordinator.forecast is not None:
-        entities.extend(EnvoyForecastSensor(coordinator, desc) for desc in FORECAST_SENSORS)
+        entities.extend(EnvoyForecastSensor(coordinator, desc) for desc in (*FORECAST_SENSORS, *FORECAST_EXTRA))
         entities.append(EnvoyForecastPerformanceSensor(coordinator, FORECAST_VS_ACTUAL))
+        entities.append(EnvoyForecastAccuracySensor(coordinator, FORECAST_ACCURACY))
     async_add_entities(entities)
 
     # Values this gateway cannot deliver (e.g. 'last 7 days' on firmware 8)
@@ -1097,6 +1189,19 @@ class EnvoyForecastPerformanceSensor(EnvoyEntity, SensorEntity):
         expected = self.coordinator.forecast.data.so_far
         actual = self.coordinator.data.production_today if self.coordinator.data else None
         if not expected or expected < 0.2 or actual is None:
+            return None
+        return round(actual / 1000 / expected * 100, 0)
+
+
+class EnvoyForecastAccuracySensor(EnvoyEntity, SensorEntity):
+    """Yesterday's production as a share of what the forecast gave for yesterday."""
+
+    @property
+    def native_value(self) -> float | None:
+        """Percentage (100 = spot on)."""
+        expected = self.coordinator.forecast.data.yesterday
+        actual = self.coordinator.data.production_yesterday if self.coordinator.data else None
+        if not expected or expected < 0.3 or actual is None:
             return None
         return round(actual / 1000 / expected * 100, 0)
 

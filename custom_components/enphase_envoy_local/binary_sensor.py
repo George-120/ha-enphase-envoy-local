@@ -59,6 +59,16 @@ GATEWAY: tuple[EnvoyBinaryDescription, ...] = (
         value_fn=lambda d: d.export_limit_enabled,
     ),
     EnvoyBinaryDescription(
+        key="grid_voltage_high",
+        translation_key="grid_voltage_high",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        value_fn=lambda d: (
+            max(volts) > 250
+            if (volts := [p.voltage for p in d.grid_phases or d.production_phases if p.voltage])
+            else None
+        ),
+    ),
+    EnvoyBinaryDescription(
         key="production_stopped",
         translation_key="production_stopped",
         device_class=BinarySensorDeviceClass.PROBLEM,
