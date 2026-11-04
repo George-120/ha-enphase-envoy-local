@@ -70,6 +70,7 @@ class PhaseData:
     reactive_power: float | None = None  # var
     apparent_power: float | None = None  # VA
     power_factor: float | None = None
+    frequency: float | None = None  # Hz, from an own meter
 
 
 @dataclass(slots=True)

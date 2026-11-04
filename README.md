@@ -19,7 +19,7 @@ Je Enphase-zonnepanelen live en lokaal in Home Assistant: elk paneel op zijn ech
 - **Elk paneel bewaakt.** Elk paneel wordt vergeleken met de goede panelen op hetzelfde dakvlak. Blijft er een achter of geeft het niets, dan krijg je een melding onder *Instellingen → Reparaties*.
 - **Opbrengstverwachting.** Weer van Open-Meteo (gratis, geen account), uitgerekend per dakvlak en geleerd van een jaar eigen productie: richting, hellingshoek, schaduw, paneeltemperatuur en seizoen. Ook in het Energiedashboard.
 - **Net en fasen.** Spanning, stroom, arbeidsfactor, blind- en schijnbaar vermogen per fase, netfrequentie, hoogste en laagste spanning van vandaag.
-- **Geen CT's? Koppel je eigen meters.** Onder *Configureren → Eigen meters* kies je bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter. De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik, zelfvoorzienend en de live schatting per paneel.
+- **Geen CT's? Koppel je eigen meters.** Onder *Configureren → Eigen meters* kies je bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter. De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik, zelfvoorzienend en de live schatting per paneel. Je koppelt alleen de vermogenssensor; spanning, stroom, arbeidsfactor, schijnbaar en blindvermogen en frequentie van dezelfde meter worden vanzelf gevonden, dus ook de netkaart, cos φ en het glas bier werken. Een 1-fase meter is genoeg. De cos φ- en bierkaart kun je ook los aan een Shelly koppelen (*Eigen meter* in de kaarteditor).
 - **Energiedashboard zonder P1-meter.** Productie, netafname en teruglevering komen rechtstreeks uit de meters van de gateway.
 - Nederlands, Engels en Duits.
 
@@ -92,7 +92,7 @@ Your Enphase panels live and local in Home Assistant: every panel in its real pl
 - **Every panel monitored** against the good panels on the same roof surface, with repair notices when one falls behind or gives nothing.
 - **Solar forecast** from Open-Meteo, computed per roof surface and learned from a year of your own production (orientation, tilt, shade, panel temperature, season). Also in the Energy dashboard. Backtested: 10.5 % error per day, no bias.
 - **Grid and phases:** voltage, current, power factor, reactive and apparent power per phase, frequency, today's extremes.
-- **No CTs? Link your own meters** under *Configure → Own meters* (a Shelly on the solar group, a Shelly 3EM, a P1 meter): the integration then creates the same entities as with CTs, including the live estimate per panel.
+- **No CTs? Link your own meters** under *Configure → Own meters* (a Shelly on the solar group, a Shelly 3EM, a P1 meter): the integration then creates the same entities as with CTs, including the live estimate per panel. Link only the power sensor: voltage, current, power factor, apparent/reactive power and frequency of the same meter are found automatically, so the grid card, cos φ and the beer glass work too. A single-phase meter is enough.
 - **Energy dashboard without a P1 meter:** production, import and export straight from the gateway's meters.
 
 ### Installation
@@ -124,7 +124,7 @@ Deine Enphase-Module live und lokal in Home Assistant: jedes Modul an seinem ech
 - **Jedes Modul überwacht** gegenüber den guten Modulen derselben Dachfläche, mit Reparaturhinweisen, wenn eines zurückbleibt.
 - **Ertragsprognose** von Open-Meteo, je Dachfläche berechnet und aus einem Jahr eigener Erzeugung gelernt (Ausrichtung, Neigung, Schatten, Modultemperatur, Jahreszeit). Auch im Energie-Dashboard. Getestet: 10,5 % Abweichung pro Tag, ohne systematischen Fehler.
 - **Netz und Phasen:** Spannung, Strom, Leistungsfaktor, Blind- und Scheinleistung je Phase, Frequenz, Extremwerte von heute.
-- **Keine Stromwandler? Eigene Zähler verknüpfen** unter *Konfigurieren → Eigene Zähler* (Shelly am Solarkreis, Shelly 3EM, Smart-Meter-Leser): die Integration erstellt dann dieselben Entitäten wie mit Stromwandlern, inklusive Live-Schätzung je Modul.
+- **Keine Stromwandler? Eigene Zähler verknüpfen** unter *Konfigurieren → Eigene Zähler* (Shelly am Solarkreis, Shelly 3EM, Smart-Meter-Leser): die Integration erstellt dann dieselben Entitäten wie mit Stromwandlern, inklusive Live-Schätzung je Modul. Nur den Leistungssensor verknüpfen: Spannung, Strom, Leistungsfaktor, Schein-/Blindleistung und Frequenz desselben Zählers werden automatisch gefunden, also funktionieren auch Netzkarte, cos φ und Bierglas. Ein einphasiger Zähler reicht.
 - **Energie-Dashboard ohne Smart-Meter-Leser:** Erzeugung, Bezug und Einspeisung direkt aus den Zählern des Gateways.
 
 ### Installation

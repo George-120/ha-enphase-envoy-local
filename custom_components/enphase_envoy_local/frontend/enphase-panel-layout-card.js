@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.23.0";
+const CARD_VERSION = "1.24.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -3488,8 +3488,23 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
         { name: "scale", selector: { select: { mode: "dropdown", options: [
           { value: "unit", label: "Unit circle / Eenheidscirkel" }, { value: "power", label: "To scale / Op schaal" }] } } },
         { name: "hours", selector: { number: { min: 0, max: 24, step: 1, mode: "box" } } },
+        {
+          type: "expandable", name: "", title: "Own meter, e.g. a Shelly / Eigen meter, bijv. een Shelly",
+          schema: [
+            { name: "power_entity", selector: { entity: { domain: "sensor", device_class: "power" } } },
+            { name: "power_factor_entity", selector: { entity: { domain: "sensor", device_class: "power_factor" } } },
+            { name: "apparent_entity", selector: { entity: { domain: "sensor", device_class: "apparent_power" } } },
+            { name: "reactive_entity", selector: { entity: { domain: "sensor", device_class: "reactive_power" } } },
+          ],
+        },
       ],
-      computeLabel: (s) => ({ source: PF_T.en.source, scale: PF_T.en.scale, hours: PF_T.en.hoursl })[s.name] || base.computeLabel(s),
+      computeLabel: (s) => ({
+        source: PF_T.en.source, scale: PF_T.en.scale, hours: PF_T.en.hoursl,
+        power_entity: "Power (W) / Vermogen (W)",
+        power_factor_entity: "Power factor / Arbeidsfactor (cos φ)",
+        apparent_entity: "Apparent power (VA, optional) / Schijnbaar vermogen (VA, optioneel)",
+        reactive_entity: "Reactive power (var, optional) / Blindvermogen (var, optioneel)",
+      })[s.name] || base.computeLabel(s),
     };
   }
 
@@ -3521,7 +3536,15 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
   }
 
   /* Entity ids for the chosen source. */
+  /* Own meter linked in the card (e.g. a single-phase Shelly): it wins. */
+  _own() {
+    const c = this._config;
+    return c.power_entity ? { p: c.power_entity, q: c.reactive_entity, s: c.apparent_entity, pf: c.power_factor_entity } : null;
+  }
+
   _ids(src = this._src) {
+    const own = this._own();
+    if (own) return own;
     const gw = this._layout()?.attributes.gateway || {};
     if (src === "grid") return { p: gw.net_power, q: gw.grid_reactive_power, s: gw.grid_apparent_power, pf: gw.power_factor };
     if (src === "production")
@@ -3671,17 +3694,21 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
   }
 
   _update() {
-    if (!this._built || !this._layout()) return;
+    if (!this._built || (!this._layout() && !this._own())) return;
     const q = (s) => this.shadowRoot.querySelector(s);
     this.shadowRoot.querySelectorAll(".src button").forEach((b) => {
       b.classList.toggle("on", b.dataset.s === this._src);
       const ids = this._ids(b.dataset.s);
-      b.hidden = !ids.p || !this._hass.states[ids.p];
+      b.hidden = !!this._own() || !ids.p || !this._hass.states[ids.p];
     });
+    q(".src").hidden = !!this._own();
     q(".scale").textContent = `◎ ${this._p(this._scale)}`;
     const ids = this._ids();
     const v = (id) => (id ? num(this._hass, id) : null);
-    const sol = this._solve(v(ids.p), v(ids.q), v(ids.s), v(ids.pf), v(ids.qsign));
+    // Some meters (Shelly among them) give the power factor in %.
+    const pfRaw = v(ids.pf);
+    const pfVal = pfRaw == null ? null : Math.abs(pfRaw) > 1.5 ? Math.abs(pfRaw) / 100 : Math.abs(pfRaw);
+    const sol = this._solve(v(ids.p), v(ids.q), v(ids.s), pfVal, v(ids.qsign));
     this._now = sol && sol.S >= 5 ? sol : null;
     if (this._now) {
       const last = this._trail[this._trail.length - 1];
@@ -3706,7 +3733,7 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
     q(".ts b").textContent = this._now ? `${fmt(S)} VA` : "–";
     q(".ta b").textContent = this._now ? `${fmt(Math.acos(Math.min(1, pf)) * 180 / Math.PI, 1)}°` : "–";
     const note = q(".note");
-    note.hidden = !(this._now?.derived);
+    note.hidden = !(this._now?.derived) || !!this._own();
     note.textContent = this._p("noq");
     this._draw(true);
   }

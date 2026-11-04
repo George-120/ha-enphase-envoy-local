@@ -86,7 +86,7 @@
       },
       "meters": {
         "title": "Own meters (optional)",
-        "description": "Has your gateway no CTs? Link your own meters (for example a Shelly on the solar group, a Shelly 3EM or a P1 meter). The integration then creates the same entities as with CTs: production, consumption, grid import and export, self-consumption and self-sufficiency, and a live estimate per panel. Leave empty what you do not have.",
+        "description": "Has your gateway no CTs? Link your own meters (for example a Shelly on the solar group, a Shelly 3EM or a P1 meter). The integration then creates the same entities as with CTs: production, consumption, grid import and export, self-consumption and self-sufficiency, and a live estimate per panel. Leave empty what you do not have. Link only the power sensor of a meter: its voltage, current, power factor, apparent and reactive power and frequency are found on the same device by themselves, so the grid card, cos φ and the beer glass work as with Enphase CTs. A single-phase meter is fine.",
         "data": {
           "ext_production_power": "Solar production power",
           "ext_grid_power": "Grid power (positive = import)",

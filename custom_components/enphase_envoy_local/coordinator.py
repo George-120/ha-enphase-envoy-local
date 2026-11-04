@@ -654,6 +654,80 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         ).get(unit, 1.0)
         return value * factor
 
+    def _ext_meter(self, key: str, sign: float = 1.0) -> PhaseData | None:
+        """Everything a linked meter measures, like one channel of a CT.
+
+        Only the power sensor is linked; voltage, current, power factor,
+        apparent and reactive power and frequency are found on the same
+        device (for a three-phase meter: the sensors of the same channel).
+        """
+        entity_id = self.config_entry.options.get(key)
+        power = self._ext_value(key)
+        if not entity_id or power is None:
+            return None
+        found = self._siblings(entity_id)
+
+        def read(device_class: str) -> float | None:
+            sib = found.get(device_class)
+            state = self.hass.states.get(sib) if sib else None
+            try:
+                return float(state.state) if state else None
+            except (TypeError, ValueError):
+                return None
+
+        pf = read("power_factor")
+        if pf is not None and abs(pf) > 1.5:  # some meters report %
+            pf /= 100
+        phase = PhaseData(
+            power=round(power * sign, 1),
+            voltage=read("voltage"),
+            current=read("current"),
+            apparent_power=read("apparent_power"),
+            reactive_power=None if read("reactive_power") is None else read("reactive_power") * sign,
+            power_factor=None if pf is None else round(abs(pf), 3),
+        )
+        if phase.apparent_power is None and phase.power_factor:
+            phase.apparent_power = round(abs(phase.power) / phase.power_factor, 1)
+        if phase.reactive_power is None and phase.apparent_power:
+            phase.reactive_power = round(max(0.0, phase.apparent_power**2 - (phase.power or 0) ** 2) ** 0.5, 1)
+        if phase.power_factor is None and phase.apparent_power:
+            phase.power_factor = round(min(1.0, abs(phase.power) / phase.apparent_power), 3)
+        phase.frequency = read("frequency")
+        return phase
+
+    def _siblings(self, entity_id: str) -> dict[str, str]:
+        """Device-class -> entity id of the sensors measured with this one."""
+        cache = self.__dict__.setdefault("_sibling_cache", {})
+        if entity_id in cache:
+            return cache[entity_id]
+        from homeassistant.helpers import entity_registry as er
+
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(entity_id)
+        result: dict[str, str] = {}
+        if entry and entry.device_id:
+            base = entity_id.split(".", 1)[1]
+            for word in ("_active_power", "_power", "_vermogen", "_leistung"):
+                if base.endswith(word):
+                    base = base[: -len(word)]
+                    break
+            candidates: dict[str, list[str]] = {}
+            for other in er.async_entries_for_device(registry, entry.device_id):
+                if other.domain != "sensor" or other.disabled_by:
+                    continue
+                state = self.hass.states.get(other.entity_id)
+                device_class = (state.attributes.get("device_class") if state else None) or other.device_class or other.original_device_class
+                if device_class:
+                    candidates.setdefault(str(device_class), []).append(other.entity_id)
+            for device_class, ids in candidates.items():
+                same = [i for i in ids if i.split(".", 1)[1].startswith(base)]
+                if same:
+                    result[device_class] = sorted(same, key=len)[0]
+                elif len(ids) == 1:
+                    result[device_class] = ids[0]
+        cache[entity_id] = result
+        return result
+
     def _apply_external_meters(self, data: EnvoyData) -> None:
         """Fill in what the gateway's own CTs would give, from linked sensors.
 
@@ -664,15 +738,40 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         if not any(opts.get(k) for k in (CONF_EXT_PRODUCTION_POWER, CONF_EXT_GRID_POWER, CONF_EXT_GRID_IMPORT, CONF_EXT_GRID_EXPORT, *CONF_EXT_GRID_PHASES)):
             return
         if not data.production_metered and opts.get(CONF_EXT_PRODUCTION_POWER):
-            power = self._ext_value(CONF_EXT_PRODUCTION_POWER)
-            if power is not None:
-                data.production_power = max(0.0, power)
+            prod = self._ext_meter(CONF_EXT_PRODUCTION_POWER, -1.0 if (self._ext_value(CONF_EXT_PRODUCTION_POWER) or 0) < -5 else 1.0)
+            if prod is not None:
+                prod.power = max(0.0, prod.power or 0.0)
+                data.production_power = prod.power
                 data.production_external = True
+                data.production_phases = [prod]
+                data.production_power_factor = prod.power_factor
+                data.production_apparent_power = prod.apparent_power
+                data.production_reactive_power = prod.reactive_power
+                if data.frequency is None:
+                    data.frequency = prod.frequency
         if data.consumption_metered:
             return
         sign = -1.0 if opts.get(CONF_EXT_GRID_INVERT) else 1.0
         grid = self._ext_value(CONF_EXT_GRID_POWER)
         phases = [self._ext_value(k) for k in CONF_EXT_GRID_PHASES]
+        channels = [m for m in (self._ext_meter(k, sign) for k in CONF_EXT_GRID_PHASES) if m is not None]
+        if not channels and opts.get(CONF_EXT_GRID_POWER):
+            single = self._ext_meter(CONF_EXT_GRID_POWER, sign)
+            channels = [single] if single is not None else []
+        if channels:
+            data.grid_phases = channels
+            apparent = [c.apparent_power for c in channels]
+            if all(a is not None for a in apparent):
+                data.grid_apparent_power = round(sum(apparent), 1)
+                total = sum(c.power or 0 for c in channels)
+                if data.grid_apparent_power >= 1:
+                    data.power_factor = round(min(1.0, abs(total) / data.grid_apparent_power), 3)
+            reactive = [c.reactive_power for c in channels]
+            if all(r is not None for r in reactive):
+                data.grid_reactive_power = round(sum(reactive), 1)
+            freqs = [c.frequency for c in channels]
+            if data.frequency is None and any(f is not None for f in freqs):
+                data.frequency = next(f for f in freqs if f is not None)
         if grid is None and any(p is not None for p in phases):
             grid = sum(p for p in phases if p is not None)
         if grid is not None:

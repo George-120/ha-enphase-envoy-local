@@ -86,7 +86,7 @@
       },
       "meters": {
         "title": "Eigen meters (optioneel)",
-        "description": "Heeft je gateway geen CT's? Koppel dan je eigen meters (bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter). De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik en zelfvoorzienend, en een live schatting per paneel. Laat leeg wat je niet hebt.",
+        "description": "Heeft je gateway geen CT's? Koppel dan je eigen meters (bijvoorbeeld een Shelly op de zonnepanelengroep, een Shelly 3EM of een P1-meter). De integratie maakt dan dezelfde entiteiten als met CT's: productie, verbruik, netafname en teruglevering, eigen verbruik en zelfvoorzienend, en een live schatting per paneel. Laat leeg wat je niet hebt. Koppel alleen de vermogenssensor van een meter: spanning, stroom, arbeidsfactor, schijnbaar en blindvermogen en frequentie van datzelfde apparaat worden vanzelf gevonden. Zo werken de netkaart, cos φ en het glas bier net als met Enphase-CT's. Een 1-fase meter is prima.",
         "data": {
           "ext_production_power": "Vermogen zonnepanelen",
           "ext_grid_power": "Netvermogen (positief = afname)",
