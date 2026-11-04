@@ -42,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://api.energy-charts.info/price"
 STORAGE_VERSION = 1
 BACKFILL_DAYS = 400
-BACKFILL_VERSION = 3  # bump to rebuild the past from the statistics
+BACKFILL_VERSION = 4  # bump to rebuild the past from the statistics
 
 CONF_EARNINGS = "earnings"
 CONF_ZONE = "price_zone"
@@ -281,6 +281,13 @@ class Earnings:
             self._backfilling = False
 
     async def _async_do_backfill(self) -> None:
+        # Other integrations (e.g. the core Enphase one, with the longest
+        # history) must be loaded first, or their counters are not found.
+        for _ in range(60):
+            if self.hass.is_running:
+                break
+            await asyncio.sleep(10)
+        await asyncio.sleep(30)
         if "recorder" not in self.hass.config.components:
             self.data["backfill"] = BACKFILL_VERSION
             return
