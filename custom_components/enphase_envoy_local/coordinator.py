@@ -40,6 +40,8 @@ from .const import (
     CONF_EXT_GRID_EXPORT,
     CONF_EXT_GRID_IMPORT,
     CONF_EXT_GRID_INVERT,
+    CONF_EXT_GRID_SIGN,
+    CONF_EXT_PRODUCTION_SIGN,
     CONF_EXT_GRID_PHASES,
     CONF_EXT_GRID_POWER,
     CONF_EXT_PRODUCTION_POWER,
@@ -738,7 +740,9 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         if not any(opts.get(k) for k in (CONF_EXT_PRODUCTION_POWER, CONF_EXT_GRID_POWER, CONF_EXT_GRID_IMPORT, CONF_EXT_GRID_EXPORT, *CONF_EXT_GRID_PHASES)):
             return
         if not data.production_metered and opts.get(CONF_EXT_PRODUCTION_POWER):
-            prod = self._ext_meter(CONF_EXT_PRODUCTION_POWER, -1.0 if (self._ext_value(CONF_EXT_PRODUCTION_POWER) or 0) < -5 else 1.0)
+            prod = self._ext_meter(
+                CONF_EXT_PRODUCTION_POWER, -1.0 if opts.get(CONF_EXT_PRODUCTION_SIGN) == "negative" else 1.0
+            )
             if prod is not None:
                 prod.power = max(0.0, prod.power or 0.0)
                 data.production_power = prod.power
@@ -751,7 +755,11 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     data.frequency = prod.frequency
         if data.consumption_metered:
             return
-        sign = -1.0 if opts.get(CONF_EXT_GRID_INVERT) else 1.0
+        # Our convention: grid power positive = import, negative = export.
+        export_positive = opts.get(CONF_EXT_GRID_SIGN) == "positive" or (
+            CONF_EXT_GRID_SIGN not in opts and opts.get(CONF_EXT_GRID_INVERT)
+        )
+        sign = -1.0 if export_positive else 1.0
         grid = self._ext_value(CONF_EXT_GRID_POWER)
         phases = [self._ext_value(k) for k in CONF_EXT_GRID_PHASES]
         channels = [m for m in (self._ext_meter(k, sign) for k in CONF_EXT_GRID_PHASES) if m is not None]

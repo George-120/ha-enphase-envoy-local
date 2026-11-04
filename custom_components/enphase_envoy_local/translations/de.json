@@ -73,17 +73,20 @@
         "data": {
           "ext_production_power": "Leistung Solarmodule",
           "ext_grid_power": "Netzleistung (positiv = Bezug)",
-          "ext_grid_invert": "Netzsensor ist bei Einspeisung positiv",
           "ext_grid_import": "Netzbezug Energie (gesamt)",
           "ext_grid_export": "Einspeisung Energie (gesamt)",
           "ext_grid_power_l1": "Netzleistung L1",
           "ext_grid_power_l2": "Netzleistung L2",
-          "ext_grid_power_l3": "Netzleistung L3"
+          "ext_grid_power_l3": "Netzleistung L3",
+          "ext_production_sign": "Solarzähler zeigt Erzeugung als",
+          "ext_grid_sign": "Netzzähler zeigt Einspeisung als"
         },
         "data_description": {
           "ext_production_power": "Ein Leistungssensor (W oder kW), der deine Solarmodule misst, z. B. ein Shelly Pro EM am Solarkreis.",
           "ext_grid_power": "Leistung am Hausanschluss. Leer lassen, wenn du unten die drei Phasen verknüpfst.",
-          "ext_grid_import": "Gesamtzähler in kWh, z. B. von einem Smart-Meter-Leser oder Shelly 3EM."
+          "ext_grid_import": "Gesamtzähler in kWh, z. B. von einem Smart-Meter-Leser oder Shelly 3EM.",
+          "ext_production_sign": "Die meisten Zähler zeigen die Solarerzeugung positiv; bei manchen Shelly-Installationen ist sie negativ.",
+          "ext_grid_sign": "Die meisten Smart-Meter-Leser und Shellys zeigen die Einspeisung negativ (Bezug positiv). Wähle positiv, wenn dein Zähler es umgekehrt macht."
         }
       },
       "general": {
@@ -505,6 +508,20 @@
           "name": "Seriennummer des Gateways",
           "description": "Seriennummer des IQ Gateways."
         }
+      }
+    }
+  },
+  "selector": {
+    "ext_production_sign": {
+      "options": {
+        "positive": "Positiv (+)",
+        "negative": "Negativ (−)"
+      }
+    },
+    "ext_grid_sign": {
+      "options": {
+        "positive": "Positiv (+)",
+        "negative": "Negativ (−)"
       }
     }
   }

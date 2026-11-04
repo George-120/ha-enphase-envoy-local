@@ -73,17 +73,20 @@
         "data": {
           "ext_production_power": "Solar production power",
           "ext_grid_power": "Grid power (positive = import)",
-          "ext_grid_invert": "Grid sensor is positive when exporting",
           "ext_grid_import": "Grid import energy (total)",
           "ext_grid_export": "Grid export energy (total)",
           "ext_grid_power_l1": "Grid power L1",
           "ext_grid_power_l2": "Grid power L2",
-          "ext_grid_power_l3": "Grid power L3"
+          "ext_grid_power_l3": "Grid power L3",
+          "ext_production_sign": "Solar meter shows production as",
+          "ext_grid_sign": "Grid meter shows export as"
         },
         "data_description": {
           "ext_production_power": "A power sensor (W or kW) that measures your solar panels, e.g. a Shelly Pro EM on the solar group.",
           "ext_grid_power": "Power at your main connection. Leave empty when you link the three phases below.",
-          "ext_grid_import": "Lifetime counter in kWh, e.g. from a P1 meter or Shelly 3EM."
+          "ext_grid_import": "Lifetime counter in kWh, e.g. from a P1 meter or Shelly 3EM.",
+          "ext_production_sign": "Most meters show solar production as positive; some Shelly installations show it as negative.",
+          "ext_grid_sign": "Most P1 meters and Shellys show export as negative (import positive). Choose positive if your meter does it the other way round."
         }
       },
       "general": {
@@ -505,6 +508,20 @@
           "name": "Gateway serial number",
           "description": "Serial number of the IQ Gateway."
         }
+      }
+    }
+  },
+  "selector": {
+    "ext_production_sign": {
+      "options": {
+        "positive": "Positive (+)",
+        "negative": "Negative (−)"
+      }
+    },
+    "ext_grid_sign": {
+      "options": {
+        "positive": "Positive (+)",
+        "negative": "Negative (−)"
       }
     }
   }

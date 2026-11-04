@@ -73,17 +73,20 @@
         "data": {
           "ext_production_power": "Vermogen zonnepanelen",
           "ext_grid_power": "Netvermogen (positief = afname)",
-          "ext_grid_invert": "Netsensor is positief bij teruglevering",
           "ext_grid_import": "Netafname energie (totaal)",
           "ext_grid_export": "Netlevering energie (totaal)",
           "ext_grid_power_l1": "Netvermogen L1",
           "ext_grid_power_l2": "Netvermogen L2",
-          "ext_grid_power_l3": "Netvermogen L3"
+          "ext_grid_power_l3": "Netvermogen L3",
+          "ext_production_sign": "Zonnemeter toont productie als",
+          "ext_grid_sign": "Netmeter toont teruglevering als"
         },
         "data_description": {
           "ext_production_power": "Een vermogenssensor (W of kW) die je zonnepanelen meet, bijvoorbeeld een Shelly Pro EM op de zonnepanelengroep.",
           "ext_grid_power": "Vermogen op je hoofdaansluiting. Laat leeg als je hieronder de drie fasen koppelt.",
-          "ext_grid_import": "Totaalteller in kWh, bijvoorbeeld van een P1-meter of Shelly 3EM."
+          "ext_grid_import": "Totaalteller in kWh, bijvoorbeeld van een P1-meter of Shelly 3EM.",
+          "ext_production_sign": "De meeste meters tonen zonneproductie positief; bij sommige Shelly-installaties is die negatief.",
+          "ext_grid_sign": "De meeste P1-meters en Shellys tonen teruglevering negatief (afname positief). Kies positief als jouw meter het andersom doet."
         }
       },
       "general": {
@@ -505,6 +508,20 @@
           "name": "Serienummer gateway",
           "description": "Serienummer van de IQ Gateway."
         }
+      }
+    }
+  },
+  "selector": {
+    "ext_production_sign": {
+      "options": {
+        "positive": "Positief (+)",
+        "negative": "Negatief (−)"
+      }
+    },
+    "ext_grid_sign": {
+      "options": {
+        "positive": "Positief (+)",
+        "negative": "Negatief (−)"
       }
     }
   }

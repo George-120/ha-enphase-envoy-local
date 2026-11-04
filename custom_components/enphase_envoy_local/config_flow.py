@@ -20,6 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
@@ -49,6 +52,8 @@ from .const import (
     CONF_EXT_GRID_EXPORT,
     CONF_EXT_GRID_IMPORT,
     CONF_EXT_GRID_INVERT,
+    CONF_EXT_GRID_SIGN,
+    CONF_EXT_PRODUCTION_SIGN,
     CONF_EXT_GRID_PHASES,
     CONF_EXT_GRID_POWER,
     CONF_EXT_PRODUCTION_POWER,
@@ -429,6 +434,7 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
                 if not k.startswith("ext_")
             }
             options.update({k: v for k, v in user_input.items() if v not in (None, "")})
+            options.pop(CONF_EXT_GRID_INVERT, None)
             return self.async_create_entry(data=options)
         options = self.config_entry.options
         power = EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power"))
@@ -437,12 +443,19 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
         def opt(key: str):
             return vol.Optional(key, description={"suggested_value": options.get(key)})
 
+        def sign(key: str, options_: list[str], default: str):
+            return vol.Required(key, default=options.get(key, default)), SelectSelector(
+                SelectSelectorConfig(options=options_, translation_key=key, mode=SelectSelectorMode.LIST)
+            )
+
+        grid_default = "positive" if options.get(CONF_EXT_GRID_INVERT) else "negative"
+        k1, s1 = sign(CONF_EXT_PRODUCTION_SIGN, ["positive", "negative"], "positive")
+        k2, s2 = sign(CONF_EXT_GRID_SIGN, ["negative", "positive"], grid_default)
         schema = {
             opt(CONF_EXT_PRODUCTION_POWER): power,
+            k1: s1,
             opt(CONF_EXT_GRID_POWER): power,
-            vol.Required(
-                CONF_EXT_GRID_INVERT, default=options.get(CONF_EXT_GRID_INVERT, False)
-            ): BooleanSelector(),
+            k2: s2,
             opt(CONF_EXT_GRID_IMPORT): energy,
             opt(CONF_EXT_GRID_EXPORT): energy,
         }
