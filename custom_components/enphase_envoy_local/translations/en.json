@@ -73,13 +73,15 @@
           "scan_interval": "Update interval",
           "inverter_sensors": "Sensors per microinverter",
           "underperform_threshold": "Underperformance alert below",
-          "forecast": "Solar forecast (Open-Meteo)"
+          "forecast": "Solar forecast (Open-Meteo)",
+          "live_estimate": "Live estimate per panel"
         },
         "data_description": {
           "scan_interval": "Seconds between readings (5-300).",
           "inverter_sensors": "Microinverters report about every 5 minutes.",
           "underperform_threshold": "A panel is flagged when it produces less than this percentage of what the good panels on the same roof surface produce (100 % = as good as the best panels).",
-          "forecast": "Expected production per roof surface from the Open-Meteo weather forecast (free, no account; the Home Assistant location is sent). Calibrated automatically on what your panels really produce."
+          "forecast": "Expected production per roof surface from the Open-Meteo weather forecast (free, no account; the Home Assistant location is sent). Calibrated automatically on what your panels really produce.",
+          "live_estimate": "Microinverters report about every 15 minutes. With this on, every panel also gets a live value: its share of the last reports times what the production meter measures now (every 10 s)."
         }
       }
     }
@@ -372,6 +374,9 @@
       },
       "forecast_accuracy_yesterday": {
         "name": "Forecast accuracy yesterday"
+      },
+      "inverter_power_live": {
+        "name": "Power (live estimate)"
       }
     },
     "binary_sensor": {

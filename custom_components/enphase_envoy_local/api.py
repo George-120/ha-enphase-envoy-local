@@ -78,6 +78,8 @@ class InverterData:
 
     serial: str
     power: float | None = None
+    # Live estimate between reports: its share of the last reports x the meter now.
+    power_estimate: float | None = None
     max_power: float | None = None
     last_report: datetime | None = None
     # /ivp/pdm/device_data (firmware 7.6+ / 8.x)

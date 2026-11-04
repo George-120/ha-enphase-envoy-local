@@ -272,6 +272,9 @@
       },
       "forecast_accuracy_yesterday": {
         "default": "mdi:bullseye-arrow"
+      },
+      "inverter_power_live": {
+        "default": "mdi:solar-power-variant-outline"
       }
     },
     "binary_sensor": {

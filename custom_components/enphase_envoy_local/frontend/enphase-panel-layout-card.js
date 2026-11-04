@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.22.2";
+const CARD_VERSION = "1.23.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -207,7 +207,7 @@ const ICONS = {
 };
 
 // Other W sensors of a microinverter that are not its AC power.
-const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max)/i;
+const SKIP_POWER = /(_dc_|_dc$|dc_vermogen|dc_power|max|live|schatting|schaetzung|estimate)/i;
 
 // Size presets of the extra cards: width in a Sections dashboard and how
 // much detail is shown, so the content always fits.
@@ -436,6 +436,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
             { name: "show_toolbar", selector: { boolean: {} } },
             { name: "show_labels", selector: { boolean: {} } },
             { name: "show_phase", selector: { boolean: {} } },
+            { name: "live_estimate", selector: { boolean: {} } },
             { name: "max_height", selector: { text: {} } },
           ],
         },
@@ -451,6 +452,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
           show_toolbar: "Buttons and replay / Knoppen en afspelen",
           show_labels: "Roof names / Dakvlaknamen",
           show_phase: "Phase badges / Fase-labels",
+          live_estimate: "Live estimate between reports / Live schatting tussen meldingen",
           max_height: "Max height / Max. hoogte (optional / optioneel)",
         })[s.name],
     };
@@ -686,7 +688,7 @@ class EnphasePanelLayoutCard extends HTMLElement {
       el.addEventListener("click", () => {
         if (this._draft) return;
         const m = this._modules[+el.dataset.i];
-        const target = this._mode === "health" ? m.performance || m.power : m.power;
+        const target = this._mode === "health" ? m.performance || m.power : (this._config.live_estimate !== false && m.power_live) || m.power;
         if (!target) return;
         this.dispatchEvent(
           new CustomEvent("hass-more-info", { detail: { entityId: target }, bubbles: true, composed: true })
@@ -931,7 +933,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
     const demo = this._config.demo;
     return this._modules.map((m, i) => {
       const fake = demo ? 0.55 + 0.4 * Math.sin(i * 1.7 + Date.now() / 60000) : null;
-      const w = demo ? Math.round(290 * fake) : num(hass, m.power);
+      // Between the microinverter reports (about every 15 min) the integration
+      // gives a live estimate per panel; the measured value is the fallback.
+      const live = this._config.live_estimate !== false && m.power_live ? num(hass, m.power_live) : null;
+      const w = demo ? Math.round(290 * fake) : live ?? num(hass, m.power);
       const t = demo ? Math.round(18 + 20 * fake) : num(hass, m.temperature);
       const eff = demo ? 95 + 2 * fake : num(hass, m.efficiency);
       const dc = demo ? w / (eff / 100) : num(hass, m.dc_power);

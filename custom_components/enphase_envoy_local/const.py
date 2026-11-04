@@ -29,6 +29,7 @@ TOKEN_RENEW_BEFORE: Final = timedelta(days=30)
 LOGIN_BACKOFF_MINUTES: Final = (1, 2, 5, 10, 30, 60)
 
 CONF_UNDERPERFORM_THRESHOLD: Final = "underperform_threshold"
+CONF_LIVE_ESTIMATE: Final = "live_estimate"  # live power per panel from the production meter
 CONF_FORECAST: Final = "forecast"  # calibrated solar forecast via Open-Meteo
 FORECAST_INTERVAL: Final = timedelta(minutes=30)
 DEFAULT_UNDERPERFORM_THRESHOLD: Final = 90  # % of the median of the same roof surface

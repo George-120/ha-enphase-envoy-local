@@ -36,6 +36,7 @@ from .const import (
     NO_OUTPUT_ALERT,
     CONF_FIRMWARE,
     CONF_INVERTER_SENSORS,
+    CONF_LIVE_ESTIMATE,
     CONF_SCAN_INTERVAL,
     CONF_SERIAL,
     CONF_TOKEN,
@@ -66,6 +67,51 @@ DAILY_COUNTERS = (
 )
 
 type EnvoyConfigEntry = ConfigEntry[EnvoyCoordinator]
+
+
+def _expected_at(hourly: dict, moment: datetime) -> float | None:
+    """Forecast power (W) at a moment, interpolated between hour middles."""
+    if not hourly:
+        return None
+    mids = sorted((end - timedelta(minutes=30), wh) for end, wh in hourly.items())
+    for (t0, v0), (t1, v1) in zip(mids, mids[1:]):
+        if t0 <= moment <= t1:
+            k = (moment - t0) / (t1 - t0)
+            return v0 + (v1 - v0) * k
+    return None
+
+
+def _estimate_live(data, hourly: dict | None = None) -> None:
+    """Live power per panel between the microinverter reports.
+
+    The microinverters report about every 15 minutes over the power line.
+    With a production meter (every second) each panel keeps its share of what
+    all panels reported last, multiplied by what the meter measures now.
+    Without one, each panel's last report follows the expected solar curve of
+    the forecast from the moment it reported until now (the sun, not clouds).
+    """
+    reported = {s: i.power for s, i in data.inverters.items() if i.power is not None and i.power >= 0}
+    total = sum(reported.values())
+    meter = data.production_power if data.production_metered else None
+    now = dt_util.utcnow()
+    for serial, inv in data.inverters.items():
+        if serial not in reported:
+            inv.power_estimate = None
+            continue
+        estimate = reported[serial]
+        if meter is not None and total >= 5:
+            estimate = max(0.0, meter) * reported[serial] / total
+        elif hourly and inv.last_report:
+            then = _expected_at(hourly, dt_util.as_utc(inv.last_report))
+            current = _expected_at(hourly, now)
+            if then is not None and current is not None:
+                if then >= 20:
+                    estimate = reported[serial] * min(3.0, max(0.0, current / then))
+                elif current < 5:
+                    estimate = 0.0
+        if inv.max_power:
+            estimate = min(estimate, inv.max_power * 1.1)
+        inv.power_estimate = round(estimate, 1)
 
 
 def _ts(value) -> float:
@@ -313,6 +359,8 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
                     CONF_UNDERPERFORM_THRESHOLD, DEFAULT_UNDERPERFORM_THRESHOLD
                 ),
             )
+        if self.inverter_sensors and self.config_entry.options.get(CONF_LIVE_ESTIMATE, True):
+            _estimate_live(data, self.forecast.data.hourly if self.forecast else None)
         self._remember_efficiency(data)
         self._update_issues(data)
         return data

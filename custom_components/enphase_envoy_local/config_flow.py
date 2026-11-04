@@ -44,6 +44,7 @@ from .api import (
 from .const import (
     CONF_FIRMWARE,
     CONF_FORECAST,
+    CONF_LIVE_ESTIMATE,
     CONF_INVERTER_SENSORS,
     CONF_SCAN_INTERVAL,
     CONF_SERIAL,
@@ -378,6 +379,10 @@ class EnvoyLocalOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_INVERTER_SENSORS,
                         default=options.get(CONF_INVERTER_SENSORS, True),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_LIVE_ESTIMATE,
+                        default=options.get(CONF_LIVE_ESTIMATE, True),
                     ): BooleanSelector(),
                     vol.Required(
                         CONF_FORECAST,

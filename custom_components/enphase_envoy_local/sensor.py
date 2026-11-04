@@ -427,6 +427,7 @@ def _inv(key: str, value_fn, unit=None, device_class=None, precision=None, **kw)
 
 INVERTER_SENSORS: tuple[InverterSensorDescription, ...] = (
     _inv("power", lambda i: i.power, UnitOfPower.WATT, SensorDeviceClass.POWER, 0),
+    _inv("power_live", lambda i: i.power_estimate, UnitOfPower.WATT, SensorDeviceClass.POWER, 0),
     _inv("dc_power", lambda i: i.dc_power, UnitOfPower.WATT, SensorDeviceClass.POWER, 0),
     _inv(
         "efficiency",
@@ -1059,6 +1060,7 @@ class EnvoyLayoutSensor(EnvoyEntity, SensorEntity):
                         "phase": inv.phase if inv else None,
                         "max": inv.max_power if inv else None,
                         "power": serial and entity(serial, "sensor", "inverter_power"),
+                        "power_live": serial and entity(serial, "sensor", "inverter_power_live"),
                         "temperature": serial
                         and entity(serial, "sensor", "inverter_temperature"),
                         "efficiency": serial
@@ -1227,6 +1229,8 @@ def _inverter_supported(desc: InverterSensorDescription, inv: InverterData) -> b
     """Only create what this gateway reports for this inverter."""
     if desc.key == "inverter_power":
         return True
+    if desc.key == "inverter_power_live":
+        return inv.power_estimate is not None
     if desc.key in ("inverter_efficiency", "inverter_dc_power"):
         return inv.dc_voltage is not None
     if desc.key in ("inverter_performance", "inverter_performance_week"):

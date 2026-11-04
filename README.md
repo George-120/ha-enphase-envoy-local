@@ -15,6 +15,7 @@ Je Enphase-zonnepanelen live en lokaal in Home Assistant: elk paneel op zijn ech
 
 - **Lokaal uitlezen.** De integratie leest je Enphase IQ Gateway (Envoy) elke 10 seconden rechtstreeks in je eigen netwerk uit. Enlighten wordt alleen gebruikt om het token op te halen en automatisch te vernieuwen dat firmware 7 en nieuwer nodig heeft.
 - **Paneelindeling uit Enlighten.** Elk paneel staat op zijn echte plek op het dak, met live vermogen, temperatuur, rendement en gezondheid. Heeft de installateur geen plattegrond getekend, dan leg je de panelen zelf neer.
+- **Live per paneel.** Micro-omvormers melden zich maar ongeveer elke 15 minuten. Daartussen schat de integratie het vermogen van elk paneel live: met een productiemeter uit de meting van elke 10 seconden, zonder meter uit het verwachte zonverloop. Uit te zetten in de opties.
 - **Elk paneel bewaakt.** Elk paneel wordt vergeleken met de goede panelen op hetzelfde dakvlak. Blijft er een achter of geeft het niets, dan krijg je een melding onder *Instellingen → Reparaties*.
 - **Opbrengstverwachting.** Weer van Open-Meteo (gratis, geen account), uitgerekend per dakvlak en geleerd van een jaar eigen productie: richting, hellingshoek, schaduw, paneeltemperatuur en seizoen. Ook in het Energiedashboard.
 - **Net en fasen.** Spanning, stroom, arbeidsfactor, blind- en schijnbaar vermogen per fase, netfrequentie, hoogste en laagste spanning van vandaag.
@@ -86,6 +87,7 @@ Your Enphase panels live and local in Home Assistant: every panel in its real pl
 
 - **Local readings** from your Enphase IQ Gateway (Envoy) every 10 seconds. Enlighten is only used to get and renew the token that firmware 7 and newer require.
 - **Panel layout from Enlighten**, with live power, temperature, efficiency and health per panel. No layout in Enlighten? Arrange the panels yourself.
+- **Live per panel.** Microinverters only report about every 15 minutes. In between the integration estimates every panel live: from the production meter (every 10 s) when there is one, otherwise from the expected solar curve. Can be turned off in the options.
 - **Every panel monitored** against the good panels on the same roof surface, with repair notices when one falls behind or gives nothing.
 - **Solar forecast** from Open-Meteo, computed per roof surface and learned from a year of your own production (orientation, tilt, shade, panel temperature, season). Also in the Energy dashboard. Backtested: 10.5 % error per day, no bias.
 - **Grid and phases:** voltage, current, power factor, reactive and apparent power per phase, frequency, today's extremes.
@@ -116,6 +118,7 @@ Deine Enphase-Module live und lokal in Home Assistant: jedes Modul an seinem ech
 
 - **Lokales Auslesen** deines Enphase IQ Gateway (Envoy) alle 10 Sekunden. Enlighten wird nur für das Token genutzt, das Firmware 7 und neuer verlangt.
 - **Modulanordnung aus Enlighten**, mit Live-Leistung, Temperatur, Wirkungsgrad und Zustand je Modul. Kein Plan in Enlighten? Dann ordnest du die Module selbst an.
+- **Live je Modul.** Mikrowechselrichter melden sich nur etwa alle 15 Minuten. Dazwischen schätzt die Integration jedes Modul live: mit Erzeugungszähler aus dessen Messung (alle 10 s), sonst aus dem erwarteten Sonnenverlauf. In den Optionen abschaltbar.
 - **Jedes Modul überwacht** gegenüber den guten Modulen derselben Dachfläche, mit Reparaturhinweisen, wenn eines zurückbleibt.
 - **Ertragsprognose** von Open-Meteo, je Dachfläche berechnet und aus einem Jahr eigener Erzeugung gelernt (Ausrichtung, Neigung, Schatten, Modultemperatur, Jahreszeit). Auch im Energie-Dashboard. Getestet: 10,5 % Abweichung pro Tag, ohne systematischen Fehler.
 - **Netz und Phasen:** Spannung, Strom, Leistungsfaktor, Blind- und Scheinleistung je Phase, Frequenz, Extremwerte von heute.

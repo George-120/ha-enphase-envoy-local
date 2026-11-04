@@ -73,13 +73,15 @@
           "scan_interval": "Aktualisierungsintervall",
           "inverter_sensors": "Sensoren pro Mikrowechselrichter",
           "underperform_threshold": "Minderleistungswarnung unter",
-          "forecast": "Solarprognose (Open-Meteo)"
+          "forecast": "Solarprognose (Open-Meteo)",
+          "live_estimate": "Live-Schätzung je Modul"
         },
         "data_description": {
           "scan_interval": "Sekunden zwischen den Abfragen (5–300).",
           "inverter_sensors": "Mikrowechselrichter melden sich etwa alle 5 Minuten.",
           "underperform_threshold": "Ein Modul wird markiert, wenn es weniger als diesen Prozentsatz dessen erzeugt, was die guten Module auf derselben Dachfläche erzeugen (100 % = so gut wie die besten Module).",
-          "forecast": "Erwartete Erzeugung pro Dachfläche auf Basis der Wettervorhersage von Open-Meteo (kostenlos, ohne Konto; der Standort von Home Assistant wird übermittelt). Wird automatisch anhand der tatsächlichen Erzeugung deiner Module kalibriert."
+          "forecast": "Erwartete Erzeugung pro Dachfläche auf Basis der Wettervorhersage von Open-Meteo (kostenlos, ohne Konto; der Standort von Home Assistant wird übermittelt). Wird automatisch anhand der tatsächlichen Erzeugung deiner Module kalibriert.",
+          "live_estimate": "Mikrowechselrichter melden sich etwa alle 15 Minuten. Mit dieser Option bekommt jedes Modul zusätzlich einen Live-Wert: sein Anteil an den letzten Meldungen mal das, was der Erzeugungszähler jetzt misst (alle 10 s)."
         }
       }
     }
@@ -372,6 +374,9 @@
       },
       "forecast_accuracy_yesterday": {
         "name": "Prognosegenauigkeit gestern"
+      },
+      "inverter_power_live": {
+        "name": "Leistung (Live-Schätzung)"
       }
     },
     "binary_sensor": {
