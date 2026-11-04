@@ -58,6 +58,10 @@ async def async_get_config_entry_diagnostics(
             "history_source": getattr(getattr(coordinator, "forecast", None), "history_source", None),
             "error": coordinator.forecast.data.error if getattr(coordinator, "forecast", None) else None,
         },
+        "earnings": (
+            {k: v for k, v in coordinator.earnings.data.items()} | {"error": coordinator.earnings.error}
+            if getattr(coordinator, "earnings", None) else None
+        ),
         "inverter_count": len(coordinator.data.inverters) if coordinator.data else 0,
         "layout": {
             "source": "enlighten" if coordinator.layout else "phases",

@@ -41,7 +41,7 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://api.energy-charts.info/price"
 STORAGE_VERSION = 1
 BACKFILL_DAYS = 400
-BACKFILL_VERSION = 1
+BACKFILL_VERSION = 2  # bump to rebuild the past from the statistics
 
 CONF_EARNINGS = "earnings"
 CONF_ZONE = "price_zone"
@@ -330,17 +330,20 @@ class Earnings:
             self.data["backfill"] = BACKFILL_VERSION
             return
         first = min(production)
-        # Only fill in what is older than what was tracked live.
-        tracked_since = dt_util.parse_datetime(self.data.get("total", {}).get("since", "")) if self.data.get("total") else None
-        until = tracked_since or end
-        prices: list[tuple[datetime, float]] = []
+        until = end
+        prices: list[tuple[datetime, float]] = list(self.points)
         cursor = first
+        missing_chunks = 0
         while cursor < until:
-            chunk_end = min(cursor + timedelta(days=60), until + timedelta(days=1))
-            try:
-                prices.extend(await self._async_prices(cursor, chunk_end))
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.info("Past prices not available (%s): %s", cursor.date(), err)
+            chunk_end = min(cursor + timedelta(days=14), until + timedelta(days=1))
+            for attempt in range(3):
+                try:
+                    prices.extend(await self._async_prices(cursor, chunk_end))
+                    break
+                except Exception as err:  # noqa: BLE001
+                    if attempt == 2:
+                        missing_chunks += 1
+                        _LOGGER.info("Past prices not available (%s): %s", cursor.date(), err)
             cursor = chunk_end
         prices = sorted(set(prices))
         hourly: dict[datetime, list[float]] = {}
@@ -348,30 +351,25 @@ class Earnings:
             hourly.setdefault(moment.replace(minute=0, second=0, microsecond=0), []).append(price)
         market = {k: sum(v) / len(v) for k, v in hourly.items()}
         tariff = self.tariff
-        fresh: dict[str, Any] = {"total": {}}
-        keep_total = self.data.get("total") or {}
-        saved = self.data
-        self.data = fresh
+        # The past is rebuilt from scratch; live tracking continues from here.
+        self.data = {"total": {}}
+        without_price = 0
         for moment in sorted(production):
-            if moment >= until or moment not in market:
+            if moment >= until:
+                continue
+            if moment not in market:
+                if production[moment] > 0:
+                    without_price += 1
                 continue
             value = tariff.value(market[moment], production[moment], export.get(moment) if export else None)
             self._add(moment, value["savings"], value["export"], production[moment])
-        # Add what was tracked live on top of the past.
-        merged = self.data
-        for key in ("savings", "export", "wh"):
-            merged["total"][key] = merged["total"].get(key, 0.0) + keep_total.get(key, 0.0)
-        merged["total"]["since"] = first.isoformat()
-        for period in ("day", "month", "year"):
-            live = saved.get(period)
-            past = merged.get(period)
-            if live and past and live.get("key") == past.get("key"):
-                for key in ("savings", "export", "wh"):
-                    past[key] = past.get(key, 0.0) + live.get(key, 0.0)
-            elif live:
-                merged[period] = live
-        merged["backfill"] = BACKFILL_VERSION
-        self.data = merged
+        self.data["total"]["since"] = first.isoformat()
+        self.data["backfill"] = BACKFILL_VERSION
+        self.data["backfill_info"] = {
+            "hours": len(production), "hours_without_price": without_price,
+            "price_chunks_failed": missing_chunks, "until": until.isoformat(),
+        }
+        self._last = None
         await self._store.async_save(self.data)
         self.coordinator.async_update_listeners()
 
