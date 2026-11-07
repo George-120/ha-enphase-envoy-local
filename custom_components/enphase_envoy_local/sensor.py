@@ -165,7 +165,6 @@ SENSORS: tuple[EnvoySensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda d: d.power_factor,
     ),
     EnvoySensorDescription(
@@ -875,6 +874,18 @@ NETWORK_SENSORS: tuple[EnvoySensorDescription, ...] = (
 )
 
 
+EXT_KEYS = (
+    "ext_production_power", "ext_grid_power", "ext_grid_import", "ext_grid_export",
+    "ext_grid_power_l1", "ext_grid_power_l2", "ext_grid_power_l3",
+)
+# Values a linked meter fills in (kept even when the meter is not ready yet).
+EXT_FILLED = {
+    "power_factor", "frequency", "grid_reactive_power", "grid_apparent_power",
+    "production_reactive_power", "production_apparent_power", "production_power_factor",
+    "net_power", "consumption_power", "production_power",
+}
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: EnvoyConfigEntry,
@@ -916,12 +927,48 @@ async def async_setup_entry(
         )
     async_add_entities(entities)
 
+    # A linked meter (e.g. a Shelly) may not be ready yet when Home Assistant
+    # starts: its values (cos phi, apparent and reactive power, ...) appear
+    # later. Keep those entities and add them as soon as there is a value.
+    ext_linked = any(coordinator.config_entry.options.get(k) for k in EXT_KEYS)
+    pending = [
+        desc
+        for desc in (*SENSORS, *NETWORK_SENSORS, *NERD_SENSORS)
+        if desc.exists_fn is not None and not desc.exists_fn(data)
+    ]
+
     # Values this gateway cannot deliver (e.g. 'last 7 days' on firmware 8)
     # are removed instead of staying 'unknown' forever.
     registry = er.async_get(hass)
     for unique_id in skipped:
+        if ext_linked and unique_id.removeprefix(f"{serial}_") in EXT_FILLED:
+            continue
         if entity_id := registry.async_get_entity_id("sensor", DOMAIN, unique_id):
             registry.async_remove(entity_id)
+
+    phase_lines = {desc.key: len(desc.lines_fn(data)) for desc in PHASE_SENSORS}
+
+    @callback
+    def _add_late() -> None:
+        new: list[SensorEntity] = []
+        for desc in list(pending):
+            if desc.exists_fn(coordinator.data):
+                pending.remove(desc)
+                new.append(EnvoySensor(coordinator, desc))
+        for desc in PHASE_SENSORS:
+            lines = len(desc.lines_fn(coordinator.data))
+            had = phase_lines[desc.key]
+            if lines >= 2 and lines > had:
+                start = had if had >= 2 else 0
+                new.extend(
+                    EnvoyPhaseSensor(coordinator, desc, index)
+                    for index in range(start, min(lines, len(PHASE_NAMES)))
+                )
+                phase_lines[desc.key] = lines
+        if new:
+            async_add_entities(new)
+
+    entry.async_on_unload(coordinator.async_add_listener(_add_late))
 
     known: set[str] = set()
 

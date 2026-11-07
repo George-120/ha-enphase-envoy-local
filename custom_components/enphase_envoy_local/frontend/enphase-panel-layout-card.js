@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.26.0";
+const CARD_VERSION = "1.26.1";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -1720,6 +1720,27 @@ const POWER_SIGN_FIELD = {
     },
   },
 };
+
+// Sensors measured together with a linked power sensor (same device; on a
+// multi-channel meter the one sharing the longest name), per device class.
+function meterSiblings(hass, entityId) {
+  const out = {};
+  const dev = hass?.entities?.[entityId]?.device_id;
+  if (!dev) return out;
+  const own = entityId.split(".")[1];
+  const common = (a, b) => { let n = 0; while (n < a.length && a[n] === b[n]) n += 1; return n; };
+  const best = {};
+  for (const [id, e] of Object.entries(hass.entities)) {
+    if (e.device_id !== dev || id === entityId || !id.startsWith("sensor.")) continue;
+    const st = hass.states[id];
+    const dc = st?.attributes.device_class;
+    if (!dc) continue;
+    const score = common(own, id.split(".")[1]) * 1000 - id.length;
+    if (!best[dc] || score > best[dc][0]) best[dc] = [score, id];
+  }
+  for (const [dc, [, id]] of Object.entries(best)) out[dc] = id;
+  return out;
+}
 
 // Production power in W from the user's own meter, or null.
 function ownPower(hass, entity, sign) {
@@ -3552,7 +3573,7 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
       computeLabel: (s) => ({
         source: PF_T.en.source, scale: PF_T.en.scale, hours: PF_T.en.hoursl,
         power_entity: "Power (W) / Vermogen (W)",
-        power_factor_entity: "Power factor / Arbeidsfactor (cos φ)",
+        power_factor_entity: "Power factor (optional, found automatically) / Arbeidsfactor (optioneel, wordt automatisch gevonden)",
         apparent_entity: "Apparent power (VA, optional) / Schijnbaar vermogen (VA, optioneel)",
         reactive_entity: "Reactive power (var, optional) / Blindvermogen (var, optioneel)",
       })[s.name] || base.computeLabel(s),
@@ -3590,7 +3611,18 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
   /* Own meter linked in the card (e.g. a single-phase Shelly): it wins. */
   _own() {
     const c = this._config;
-    return c.power_entity ? { p: c.power_entity, q: c.reactive_entity, s: c.apparent_entity, pf: c.power_factor_entity } : null;
+    if (!c.power_entity) return null;
+    // Only the power sensor is needed: cos φ, VA, var, voltage and current are
+    // picked up from the same device (for a 3-phase meter: the same channel).
+    const sib = meterSiblings(this._hass, c.power_entity);
+    return {
+      p: c.power_entity,
+      q: c.reactive_entity || sib.reactive_power,
+      s: c.apparent_entity || sib.apparent_power,
+      pf: c.power_factor_entity || sib.power_factor,
+      v: sib.voltage,
+      i: sib.current,
+    };
   }
 
   _ids(src = this._src) {
@@ -3606,8 +3638,10 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
   }
 
   /* P, Q, S from whatever is available: S and Q measured, or derived from the power factor. */
-  _solve(P, Q, S, PF, qsign) {
+  _solve(P, Q, S, PF, qsign, V, I) {
     if (P == null) return null;
+    if (PF != null && Math.abs(PF) > 1.5) PF = Math.abs(PF) / 100; // meters that report %
+    if (S == null && PF == null && Q == null && V && I != null) S = Math.abs(V * I);
     if (S == null && PF != null && PF > 0.005) S = Math.abs(P) / PF;
     if (S == null && Q != null) S = Math.hypot(P, Q);
     if (S == null) return null;
@@ -3715,7 +3749,7 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
     const key = `${this._src}|${hours}|${Math.floor(Date.now() / 300000)}`;
     if (!hours || this._histKey === key || !ids.p) return;
     this._histKey = key;
-    const want = [ids.p, ids.q, ids.s, ids.pf, ids.qsign].filter((id) => id && this._hass.states[id]);
+    const want = [ids.p, ids.q, ids.s, ids.pf, ids.qsign, ids.v, ids.i].filter((id) => id && this._hass.states[id]);
     try {
       const stats = await this._hass.callWS({
         type: "recorder/statistics_during_period",
@@ -3732,7 +3766,8 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
       }
       const pts = Object.keys(at).map(Number).sort((a, b) => a - b).map((t) => {
         const v = at[t];
-        const s = this._solve(v[ids.p], ids.q ? v[ids.q] : null, ids.s ? v[ids.s] : null, ids.pf ? v[ids.pf] : null, v[ids.qsign] ?? v[ids.q]);
+        const s = this._solve(v[ids.p], ids.q ? v[ids.q] : null, ids.s ? v[ids.s] : null, ids.pf ? v[ids.pf] : null, v[ids.qsign] ?? v[ids.q],
+          ids.v ? v[ids.v] : null, ids.i ? v[ids.i] : null);
         return s && s.S >= 5 ? { t, ...s } : null;
       }).filter(Boolean);
       if (this._src === key.split("|")[0]) {
@@ -3759,7 +3794,7 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
     // Some meters (Shelly among them) give the power factor in %.
     const pfRaw = v(ids.pf);
     const pfVal = pfRaw == null ? null : Math.abs(pfRaw) > 1.5 ? Math.abs(pfRaw) / 100 : Math.abs(pfRaw);
-    const sol = this._solve(v(ids.p), v(ids.q), v(ids.s), pfVal, v(ids.qsign));
+    const sol = this._solve(v(ids.p), v(ids.q), v(ids.s), pfVal, v(ids.qsign), v(ids.v), v(ids.i));
     this._now = sol && sol.S >= 5 ? sol : null;
     if (this._now) {
       const last = this._trail[this._trail.length - 1];

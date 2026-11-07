@@ -674,12 +674,23 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             sib = found.get(device_class)
             state = self.hass.states.get(sib) if sib else None
             try:
-                return float(state.state) if state else None
+                value = float(state.state) if state else None
             except (TypeError, ValueError):
                 return None
+            if value is None:
+                return None
+            unit = state.attributes.get("unit_of_measurement")
+            if device_class in ("apparent_power", "reactive_power") and unit in ("kVA", "kvar"):
+                value *= 1000
+            if device_class == "current" and unit == "mA":
+                value /= 1000
+            return value
 
         pf = read("power_factor")
-        if pf is not None and abs(pf) > 1.5:  # some meters report %
+        pf_state = self.hass.states.get(found["power_factor"]) if "power_factor" in found else None
+        if pf is not None and (
+            abs(pf) > 1.5 or (pf_state and pf_state.attributes.get("unit_of_measurement") == "%")
+        ):  # some meters (Shelly Gen1 among them) report %
             pf /= 100
         phase = PhaseData(
             power=round(power * sign, 1),
@@ -689,12 +700,23 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
             reactive_power=None if read("reactive_power") is None else read("reactive_power") * sign,
             power_factor=None if pf is None else round(abs(pf), 3),
         )
+        # Meters without a power-factor sensor (Shelly Plus 1PM, PM Mini, Plug)
+        # still measure voltage and current: S = V x I.
+        if (
+            phase.apparent_power is None
+            and phase.power_factor is None
+            and phase.voltage
+            and phase.current is not None
+        ):
+            phase.apparent_power = round(max(abs(phase.power or 0), abs(phase.voltage * phase.current)), 1)
         if phase.apparent_power is None and phase.power_factor:
             phase.apparent_power = round(abs(phase.power) / phase.power_factor, 1)
         if phase.reactive_power is None and phase.apparent_power:
             phase.reactive_power = round(max(0.0, phase.apparent_power**2 - (phase.power or 0) ** 2) ** 0.5, 1)
         if phase.power_factor is None and phase.apparent_power:
             phase.power_factor = round(min(1.0, abs(phase.power) / phase.apparent_power), 3)
+        if phase.power_factor is not None and phase.apparent_power is not None and phase.apparent_power < 5:
+            phase.power_factor = None  # no load: cos phi means nothing
         phase.frequency = read("frequency")
         return phase
 
@@ -709,26 +731,38 @@ class EnvoyCoordinator(DataUpdateCoordinator[EnvoyData]):
         entry = registry.async_get(entity_id)
         result: dict[str, str] = {}
         if entry and entry.device_id:
-            base = entity_id.split(".", 1)[1]
-            for word in ("_active_power", "_power", "_vermogen", "_leistung"):
-                if base.endswith(word):
-                    base = base[: -len(word)]
-                    break
-            candidates: dict[str, list[str]] = {}
+            own_object = entity_id.split(".", 1)[1]
+            own_unique = str(entry.unique_id or "")
+
+            def common(a: str, b: str) -> int:
+                n = 0
+                for x, y in zip(a, b, strict=False):
+                    if x != y:
+                        break
+                    n += 1
+                return n
+
+            # Per device class the sensor that shares the longest name (or
+            # unique id) with the linked power sensor: on a three-phase meter
+            # that is the same channel ("..._phase_a_voltage", "em:0-a_pf").
+            best: dict[str, tuple[int, int, str]] = {}
             for other in er.async_entries_for_device(registry, entry.device_id):
-                if other.domain != "sensor" or other.disabled_by:
+                if other.domain != "sensor" or other.disabled_by or other.entity_id == entity_id:
                     continue
                 state = self.hass.states.get(other.entity_id)
                 device_class = (state.attributes.get("device_class") if state else None) or other.device_class or other.original_device_class
-                if device_class:
-                    candidates.setdefault(str(device_class), []).append(other.entity_id)
-            for device_class, ids in candidates.items():
-                same = [i for i in ids if i.split(".", 1)[1].startswith(base)]
-                if same:
-                    result[device_class] = sorted(same, key=len)[0]
-                elif len(ids) == 1:
-                    result[device_class] = ids[0]
-        cache[entity_id] = result
+                if not device_class:
+                    continue
+                score = max(
+                    common(own_object, other.entity_id.split(".", 1)[1]),
+                    common(own_unique, str(other.unique_id or "")) if own_unique else 0,
+                )
+                key = (score, -len(other.entity_id), other.entity_id)
+                if str(device_class) not in best or key > best[str(device_class)]:
+                    best[str(device_class)] = key
+            result = {dc: key[2] for dc, key in best.items()}
+            if result:
+                cache[entity_id] = result
         return result
 
     def _apply_external_meters(self, data: EnvoyData) -> None:
