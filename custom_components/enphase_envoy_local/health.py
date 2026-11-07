@@ -20,6 +20,7 @@ MIN_TODAY_WH = 200  # below this the day has hardly started
 MIN_WEEK_WH = 1000
 MIN_POWER_W = 50
 MIN_GROUP = 3
+MIN_ROOF = 2  # a named roof surface: two panels can already be compared
 
 
 def array_of(layout: dict | None) -> dict[str, str]:
@@ -52,17 +53,24 @@ def apply_health(data: EnvoyData, layout: dict | None, threshold: float) -> None
         inv.array = arrays.get(serial)
         groups.setdefault(inv.array or "", []).append(inv)
 
-    for members in groups.values():
-        if len(members) < MIN_GROUP:
+    for label, members in groups.items():
+        # A roof surface the user (or Enlighten) defined: its panels get the same
+        # sun, so even two of them can be compared. Panels on another surface
+        # (another direction or tilt) never count against these.
+        need = MIN_ROOF if label else MIN_GROUP
+        if len(members) < need:
+            for inv in members:
+                inv.performance = inv.performance_week = None
+                inv.underperforming = inv.no_output = False
             continue
 
         def med(attr: str) -> float:
             values = [getattr(i, attr) for i in members if getattr(i, attr) is not None]
-            return median(values) if len(values) >= MIN_GROUP else 0.0
+            return median(values) if len(values) >= need else 0.0
 
         def ref(attr: str) -> float:
             values = [getattr(i, attr) for i in members if getattr(i, attr) is not None]
-            return _reference(values) if len(values) >= MIN_GROUP else 0.0
+            return _reference(values) if len(values) >= need else 0.0
 
         today, yesterday = ref("energy_today"), ref("energy_yesterday")
         week, power = ref("energy_week"), med("power")

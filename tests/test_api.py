@@ -368,6 +368,29 @@ def test_health_flags_weak_panel_on_same_roof():
     assert good.no_output is False
 
 
+def test_health_compares_per_roof_surface():
+    data = api.EnvoyData()
+    # Four panels facing south, two on a side roof that gets less sun.
+    for n, (today, week, power) in enumerate(
+        [(900, 6000, 200), (880, 5900, 198), (910, 6100, 205), (890, 6050, 201), (500, 3300, 90), (380, 2500, 70)]
+    ):
+        data.inverters[str(n)] = _inv(str(n), today, week, power)
+    one_roof = {"arrays": [{"label": "", "modules": [{"serial": str(n)} for n in range(6)]}]}
+    health.apply_health(data, one_roof, 90)
+    assert data.inverters["4"].underperforming is True  # wrongly compared with the south roof
+    split = {"arrays": [
+        {"label": "South", "modules": [{"serial": str(n)} for n in range(4)]},
+        {"label": "Side", "modules": [{"serial": "4"}, {"serial": "5"}]},
+    ]}
+    health.apply_health(data, split, 90)
+    assert data.inverters["4"].underperforming is False
+    assert data.inverters["4"].performance_week == 100.0
+    # Two panels on the same surface are compared with each other.
+    assert data.inverters["5"].performance_week == pytest.approx(75.8, abs=0.1)
+    assert data.inverters["5"].underperforming is True
+    assert all(data.inverters[str(n)].underperforming is False for n in range(4))
+
+
 def test_health_waits_for_the_sun():
     data = api.EnvoyData()
     for n in range(4):

@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.26.1";
+const CARD_VERSION = "1.27.0";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -85,8 +85,12 @@ const T = {
     rotate: "Rotate",
     roof: "Roof surface",
     new_roof: "+ New roof surface",
+    panels: "panels",
+    selected: "panels selected",
+    move_to: "Move to",
+    deselect: "Deselect",
     roof_name: "Name of this roof surface",
-    edit_hint: "Drag the panels to their place. Click a panel to rotate it or move it to another roof surface.",
+    edit_hint: "Drag the panels to their place. Tap panels to select them, then move them to another roof surface (e.g. a different direction). Panels are only compared with panels on the same roof surface.",
     source_manual: "Layout drawn by hand",
     save_failed: "Saving failed",
   },
@@ -137,8 +141,12 @@ const T = {
     rotate: "Draaien",
     roof: "Dakvlak",
     new_roof: "+ Nieuw dakvlak",
+    panels: "panelen",
+    selected: "panelen geselecteerd",
+    move_to: "Verplaats naar",
+    deselect: "Selectie wissen",
     roof_name: "Naam van dit dakvlak",
-    edit_hint: "Sleep de panelen naar hun plek. Klik op een paneel om het te draaien of naar een ander dakvlak te zetten.",
+    edit_hint: "Sleep de panelen naar hun plek. Tik panelen aan om ze te selecteren en zet ze op een ander dakvlak (bijv. een andere richting). Panelen worden alleen vergeleken met panelen op hetzelfde dakvlak.",
     source_manual: "Zelf getekende indeling",
     save_failed: "Opslaan mislukt",
   },
@@ -189,8 +197,12 @@ const T = {
     rotate: "Drehen",
     roof: "Dachfläche",
     new_roof: "+ Neue Dachfläche",
+    panels: "Module",
+    selected: "Module ausgewählt",
+    move_to: "Verschieben nach",
+    deselect: "Auswahl aufheben",
     roof_name: "Name dieser Dachfläche",
-    edit_hint: "Ziehe die Module an ihren Platz. Klicke auf ein Modul, um es zu drehen oder einer anderen Dachfläche zuzuordnen.",
+    edit_hint: "Ziehe die Module an ihren Platz. Tippe Module an, um sie auszuwählen, und ordne sie einer anderen Dachfläche zu (z. B. andere Ausrichtung). Module werden nur mit Modulen derselben Dachfläche verglichen.",
     source_manual: "Von Hand gezeichnete Anordnung",
     save_failed: "Speichern fehlgeschlagen",
   },
@@ -577,9 +589,10 @@ class EnphasePanelLayoutCard extends HTMLElement {
           m.phase && this._config.show_phase
             ? `<span class="phase" style="background:${PHASE_COLORS[m.phase] || "#616161"}">${esc(m.phase)}</span>`
             : "";
-        const sel = editing && this._selected === m.serial ? " selected" : "";
-        return `<button class="panel ${landscape ? "land" : "port"}${sel}" data-i="${i}"
-          style="left:${pct(left, width)};top:${pct(top, height)};width:${pct(m.w, width)};height:${pct(m.h, height)}">
+        const sel = editing && this._sel?.has(m.serial) ? " selected" : "";
+        const tint = editing ? `;--roof:${ROOF_COLORS[m.arrayIndex % ROOF_COLORS.length]}` : "";
+        return `<button class="panel ${landscape ? "land" : "port"}${sel}${editing ? " tinted" : ""}" data-i="${i}"
+          style="left:${pct(left, width)};top:${pct(top, height)};width:${pct(m.w, width)};height:${pct(m.h, height)}${tint}">
             <span class="glow"></span>
             ${phase}
             <span class="alert">!</span>
@@ -786,34 +799,45 @@ class EnphasePanelLayoutCard extends HTMLElement {
       label: a.label || "",
       modules: a.modules.filter((m) => m.serial).map((m) => ({ ...m })),
     }));
-    this._selected = null;
+    this._sel = new Set();
     this._build(this._layoutState);
     this._update();
   }
 
   _endEdit() {
     this._draft = null;
-    this._selected = null;
+    this._sel = new Set();
     this._build(this._layoutState);
     this._update();
   }
 
   _editBarHtml(arrays) {
+    // Every roof surface with its colour and name: panels on the same surface
+    // are compared with each other for the health check.
+    const roofs = arrays
+      .map((a, i) => (a.modules.length ? `<div class="roof-row">
+          <span class="dot" style="background:${ROOF_COLORS[i % ROOF_COLORS.length]}"></span>
+          <input class="roof-name" data-a="${i}" placeholder="${esc(this._t("roof_name"))}" value="${esc(a.label)}">
+          <small>${a.modules.length} ${esc(this._t("panels"))}</small>
+        </div>` : ""))
+      .join("");
     let sel = "";
-    const ai = arrays.findIndex((a) => a.modules.some((m) => m.serial === this._selected));
-    if (ai >= 0) {
+    const n = this._sel?.size || 0;
+    if (n) {
       const options = arrays
-        .map((a, i) => (a.modules.length || i === ai ? `<option value="${i}"${i === ai ? " selected" : ""}>${esc(a.label || `${this._t("roof")} ${i + 1}`)}</option>` : ""))
+        .map((a, i) => (a.modules.length ? `<option value="${i}">${esc(a.label || `${this._t("roof")} ${i + 1}`)}</option>` : ""))
         .join("");
       sel = `<div class="edit-sel">
-          <span class="serial">${esc(this._selected)}</span>
+          <span class="serial">${n === 1 ? esc([...this._sel][0]) : `${n} ${esc(this._t("selected"))}`}</span>
           <button class="chip rotate">⟳ ${esc(this._t("rotate"))}</button>
-          <label>${esc(this._t("roof"))} <select class="roof-pick">${options}<option value="new">${esc(this._t("new_roof"))}</option></select></label>
-          <input class="roof-name" placeholder="${esc(this._t("roof_name"))}" value="${esc(arrays[ai].label)}">
+          <label>${esc(this._t("move_to"))} <select class="roof-pick"><option value="" selected disabled>–</option>${options}<option value="new">${esc(this._t("new_roof"))}</option></select></label>
+          <button class="chip none">${esc(this._t("deselect"))}</button>
         </div>`;
     }
+    const roofList = `<div class="roofs">${roofs}</div>`;
     return `<div class="editbar">
         <div class="hint">${esc(this._t("edit_hint"))}</div>
+        ${roofList}
         ${sel}
         <div class="edit-actions">
           <button class="chip primary save">${esc(this._t("save"))}</button>
@@ -865,7 +889,8 @@ class EnphasePanelLayoutCard extends HTMLElement {
           if (!moved) {
             m.x = start.mx;
             m.y = start.my;
-            this._selected = this._selected === m.serial ? null : m.serial;
+            if (this._sel.has(m.serial)) this._sel.delete(m.serial);
+            else this._sel.add(m.serial);
           }
           this._build(this._layoutState);
           this._update();
@@ -875,32 +900,46 @@ class EnphasePanelLayoutCard extends HTMLElement {
         el.addEventListener("pointercancel", up);
       });
     });
-    q(".rotate")?.addEventListener("click", () => {
-      const { m } = find(this._selected);
-      if (!m) return;
-      [m.w, m.h] = [m.h, m.w];
+    const rebuild = () => {
       this._build(this._layoutState);
       this._update();
+    };
+    q(".rotate")?.addEventListener("click", () => {
+      for (const serial of this._sel) {
+        const { m } = find(serial);
+        if (m) [m.w, m.h] = [m.h, m.w];
+      }
+      rebuild();
+    });
+    q(".none")?.addEventListener("click", () => {
+      this._sel.clear();
+      rebuild();
     });
     q(".roof-pick")?.addEventListener("change", (e) => {
-      const { a, m } = find(this._selected);
-      if (!m) return;
-      a.modules.splice(a.modules.indexOf(m), 1);
+      let target;
       if (e.target.value === "new") {
-        arrays.push({ label: `${this._t("roof")} ${arrays.length + 1}`, modules: [m] });
+        target = { label: `${this._t("roof")} ${arrays.filter((a) => a.modules.length).length + 1}`, modules: [] };
+        arrays.push(target);
       } else {
-        arrays[+e.target.value].modules.push(m);
+        target = arrays[+e.target.value];
       }
-      this._build(this._layoutState);
-      this._update();
+      for (const serial of this._sel) {
+        const { a, m } = find(serial);
+        if (!m || a === target) continue;
+        a.modules.splice(a.modules.indexOf(m), 1);
+        target.modules.push(m);
+      }
+      this._sel.clear();
+      rebuild();
     });
-    q(".roof-name")?.addEventListener("change", (e) => {
-      const { a } = find(this._selected);
-      if (!a) return;
-      a.label = e.target.value.trim();
-      this._build(this._layoutState);
-      this._update();
-    });
+    this.shadowRoot.querySelectorAll(".roof-name").forEach((input) =>
+      input.addEventListener("change", (e) => {
+        const a = arrays[+e.target.dataset.a];
+        if (!a) return;
+        a.label = e.target.value.trim();
+        rebuild();
+      })
+    );
     q(".cancel").addEventListener("click", () => this._endEdit());
     const serial = this._layoutState.attributes.serial;
     const call = async (service, data, btn) => {
@@ -1708,6 +1747,8 @@ function fmtPower(w) {
   return a >= 1000 ? `${(w / 1000).toFixed(a >= 10000 ? 1 : 2)} kW` : `${Math.round(w)} W`;
 }
 
+const ROOF_COLORS = ["#5AA9FF", "#F5A623", "#4CD964", "#E056FD", "#FF6B6B", "#00D2D3"];
+
 const POWER_SIGN_FIELD = {
   name: "power_sign",
   selector: {
@@ -2151,6 +2192,13 @@ const STYLE = `
   .roof.editing .panel { cursor: grab; touch-action: none; }
   .roof.editing .panel.dragging { cursor: grabbing; z-index: 5; opacity: .85; transition: none; }
   .panel.selected { outline: 3px solid rgb(var(--sun)); outline-offset: 1px; z-index: 4; }
+  .panel.tinted { box-shadow: inset 0 0 0 3px var(--roof); }
+  .roofs { display: flex; flex-direction: column; gap: 6px; }
+  .roof-row { display: flex; align-items: center; gap: 8px; }
+  .roof-row .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .roof-row small { color: var(--secondary-text-color); white-space: nowrap; }
+  .roof-row input { font: inherit; color: var(--primary-text-color); background: var(--card-background-color);
+    border: 1px solid var(--divider-color); border-radius: 8px; padding: 6px 8px; flex: 1 1 10em; min-width: 8em; }
   .editbar { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; font-size: .85rem; }
   .editbar .hint { color: var(--secondary-text-color); }
   .edit-sel, .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
