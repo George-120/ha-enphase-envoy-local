@@ -17,7 +17,7 @@
  *   demo: false                                    # fake sunny values (screenshots)
  */
 
-const CARD_VERSION = "1.27.0";
+const CARD_VERSION = "1.27.1";
 const TAG = "enphase-panel-layout-card";
 
 const PHASE_COLORS = { L1: "#8d6e63", L2: "#455a64", L3: "#9e9e9e" };
@@ -1782,6 +1782,66 @@ function meterSiblings(hass, entityId) {
   for (const [dc, [, id]] of Object.entries(best)) out[dc] = id;
   return out;
 }
+
+// Card editor for the cos φ and beer cards: choosing the power sensor of a
+// meter (e.g. a Shelly) fills in its voltage, current, cos φ, VA and var
+// sensors from the same device, so they can be checked or changed.
+const METER_FIELDS = {
+  voltage_entity: "voltage",
+  current_entity: "current",
+  power_factor_entity: "power_factor",
+  apparent_entity: "apparent_power",
+  reactive_entity: "reactive_power",
+};
+
+class EnphaseMeterCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.addEventListener("value-changed", (e) => this._changed(e.detail.value));
+      this.appendChild(this._form);
+    }
+    const tag = this._config.type?.replace("custom:", "") || "enphase-power-factor-card";
+    const cls = customElements.get(tag) || customElements.get("enphase-power-factor-card");
+    const form = cls.getConfigForm();
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+    this._form.schema = form.schema;
+    this._form.computeLabel = form.computeLabel;
+  }
+
+  _changed(value) {
+    const config = { ...value };
+    const before = this._config.power_entity;
+    if (config.power_entity && config.power_entity !== before) {
+      const oldSib = before ? meterSiblings(this._hass, before) : {};
+      const sib = meterSiblings(this._hass, config.power_entity);
+      for (const [key, dc] of Object.entries(METER_FIELDS)) {
+        // Fill empty fields and the ones that came from the previous meter.
+        if (!config[key] || config[key] === oldSib[dc]) {
+          if (sib[dc]) config[key] = sib[dc];
+          else delete config[key];
+        }
+      }
+    }
+    for (const key of Object.keys(config)) if (config[key] === "" || config[key] == null) delete config[key];
+    this._config = config;
+    this._render();
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
+  }
+}
+if (!customElements.get("enphase-meter-card-editor")) customElements.define("enphase-meter-card-editor", EnphaseMeterCardEditor);
 
 // Production power in W from the user's own meter, or null.
 function ownPower(hass, entity, sign) {
@@ -3612,6 +3672,8 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
           type: "expandable", name: "", title: "Own meter, e.g. a Shelly / Eigen meter, bijv. een Shelly",
           schema: [
             { name: "power_entity", selector: { entity: { domain: "sensor", device_class: "power" } } },
+            { name: "voltage_entity", selector: { entity: { domain: "sensor", device_class: "voltage" } } },
+            { name: "current_entity", selector: { entity: { domain: "sensor", device_class: "current" } } },
             { name: "power_factor_entity", selector: { entity: { domain: "sensor", device_class: "power_factor" } } },
             { name: "apparent_entity", selector: { entity: { domain: "sensor", device_class: "apparent_power" } } },
             { name: "reactive_entity", selector: { entity: { domain: "sensor", device_class: "reactive_power" } } },
@@ -3620,12 +3682,18 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
       ],
       computeLabel: (s) => ({
         source: PF_T.en.source, scale: PF_T.en.scale, hours: PF_T.en.hoursl,
-        power_entity: "Power (W) / Vermogen (W)",
-        power_factor_entity: "Power factor (optional, found automatically) / Arbeidsfactor (optioneel, wordt automatisch gevonden)",
+        power_entity: "Power (W) / Vermogen (W) – the rest is filled in automatically / de rest wordt automatisch ingevuld",
+        voltage_entity: "Voltage (V) / Spanning (V)",
+        current_entity: "Current (A) / Stroom (A) – V × A = apparent power / schijnbaar vermogen",
+        power_factor_entity: "Power factor (optional) / Arbeidsfactor (optioneel)",
         apparent_entity: "Apparent power (VA, optional) / Schijnbaar vermogen (VA, optioneel)",
         reactive_entity: "Reactive power (var, optional) / Blindvermogen (var, optioneel)",
       })[s.name] || base.computeLabel(s),
     };
+  }
+
+  static getConfigElement() {
+    return document.createElement("enphase-meter-card-editor");
   }
 
   getCardSize() {
@@ -3668,8 +3736,8 @@ class EnphasePowerFactorCard extends EnphaseBaseCard {
       q: c.reactive_entity || sib.reactive_power,
       s: c.apparent_entity || sib.apparent_power,
       pf: c.power_factor_entity || sib.power_factor,
-      v: sib.voltage,
-      i: sib.current,
+      v: c.voltage_entity || sib.voltage,
+      i: c.current_entity || sib.current,
     };
   }
 
