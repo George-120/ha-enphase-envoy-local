@@ -1,0 +1,66 @@
+name: Auto release
+
+# A new version in manifest.json on main becomes a release by itself: tests,
+# zip, tag and release notes (release-notes/vX.Y.Z.md when present).
+# Nothing happens while the tag of that version already exists.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/enphase_envoy_local/manifest.json
+      - release-notes/**
+      - .github/workflows/auto-release.yml
+
+permissions:
+  contents: write
+
+concurrency: auto-release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: version
+        run: |
+          VERSION="$(jq -r .version custom_components/enphase_envoy_local/manifest.json)"
+          # Home Assistant refuses to load an integration with an invalid version.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not a valid version (expected X.Y.Z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION is already released."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.version.outputs.exists == 'false'
+        with:
+          python-version: "3.13"
+      - name: Tests
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          pip install pytest-homeassistant-custom-component
+          pytest -q
+      - name: Build zip
+        if: steps.version.outputs.exists == 'false'
+        run: cd custom_components/enphase_envoy_local && zip -r ../../enphase_envoy_local.zip . -x "__pycache__/*"
+      - name: Release
+        if: steps.version.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          NOTES="release-notes/v$VERSION.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "v$VERSION" enphase_envoy_local.zip --target "$GITHUB_SHA" \
+              --title "Enphase Envoy Local $VERSION" --notes-file "$NOTES"
+          else
+            gh release create "v$VERSION" enphase_envoy_local.zip --target "$GITHUB_SHA" \
+              --title "Enphase Envoy Local $VERSION" --generate-notes
+          fi
