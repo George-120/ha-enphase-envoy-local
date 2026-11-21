@@ -1213,7 +1213,9 @@ class EnvoyForecastSensor(EnvoyEntity, SensorEntity):
     """Expected production from the calibrated solar forecast."""
 
     entity_description: ForecastSensorDescription
-    _unrecorded_attributes = frozenset({"hourly", "calibration", "updated", "error"})
+    _unrecorded_attributes = frozenset(
+        {"hourly", "calibration", "weather_models", "accuracy", "updated", "error"}
+    )
 
     @property
     def available(self) -> bool:
@@ -1234,6 +1236,13 @@ class EnvoyForecastSensor(EnvoyEntity, SensorEntity):
         return {
             "hourly": fc.hourly_attribute(),
             "calibration": fc.data.calibration,
+            # How far every weather model is trusted here (learned), the mean
+            # error per day of the day-ahead forecast over the last 30 days and
+            # the last days as [date, forecast kWh, produced kWh].
+            "weather_models": fc.data.blend,
+            "error_30d": fc.data.error_30d,
+            "accuracy": fc.log[-14:],
+            "intraday": fc.data.intraday,
             "updated": fc.data.updated.isoformat() if fc.data.updated else None,
             "error": fc.data.error,
         }

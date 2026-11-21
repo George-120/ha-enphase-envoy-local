@@ -57,6 +57,9 @@ async def async_get_config_entry_diagnostics(
             "calibration": coordinator.forecast.data.calibration if getattr(coordinator, "forecast", None) else None,
             "history_source": getattr(getattr(coordinator, "forecast", None), "history_source", None),
             "error": coordinator.forecast.data.error if getattr(coordinator, "forecast", None) else None,
+            "weather_models": coordinator.forecast.data.blend if getattr(coordinator, "forecast", None) else None,
+            "error_30d": coordinator.forecast.data.error_30d if getattr(coordinator, "forecast", None) else None,
+            "log": coordinator.forecast.log if getattr(coordinator, "forecast", None) else None,
         },
         "earnings": (
             {k: v for k, v in coordinator.earnings.data.items() if k != "market_cache"} | {"error": coordinator.earnings.error}

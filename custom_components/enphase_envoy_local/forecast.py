@@ -1,26 +1,33 @@
 """Solar forecast for Enphase Envoy Local, calibrated on the system itself.
 
 Weather comes from Open-Meteo (free, no account): hourly global, direct and
-diffuse irradiance for the location of Home Assistant, the average of two
-global weather models (DWD ICON and ECMWF IFS) - an average of models is
-clearly more accurate than any single one. From the position of the sun the
+diffuse irradiance, temperature, wind, humidity and snow for the location of
+Home Assistant, from six weather models (DWD ICON, ECMWF IFS, Meteo-France,
+KNMI, UK Met Office and NOAA GFS). From the position of the sun the
 integration computes the irradiance on every roof surface itself.
 
 Everything else is learned from the system's own history (the long-term
-statistics of the microinverters):
+statistics of the microinverters and of the production meter):
 
 * the orientation and tilt of every roof surface, when the Enlighten layout
-  does not have them (installers often leave them at 0° / south), by finding
+  does not have them (installers often leave them at 0 / south), by finding
   the orientation whose irradiance matches the shape of the production days;
-* how many Wh a roof surface makes per Wh/m², so dirt, panel type and the
+* how many Wh a roof surface makes per Wh/m2, so dirt, panel type and the
   inverters' limits are part of the forecast without any setup;
 * a shade map per roof surface: how much of the expected light really arrives
-  for every position of the sun (trees, chimneys, neighbours, low winter sun).
+  for every position of the sun (trees, chimneys, neighbours, low winter sun);
+* how much each weather model is to be trusted *at this location*: the
+  forecasts the models made for the past year are weighed against what the
+  system really produced (non-negative least squares). Clouds are already
+  part of a model's irradiance; what the models get wrong is learned here.
+  Fog and drizzle (very humid air) get their own correction.
 
-It learns from the *forecasts* that were made for the past year (Open-Meteo's
-historical forecast archive), not from measured weather, so the calibration
-also corrects the habits of the weather models. Backtested on a year of real
-production: ~10 % error per day and ~18 % per hour.
+Hours in which the system was switched off or curtailed (bright sky, almost
+no production) are recognised and left out of everything that is learned.
+
+Backtested walk-forward on a year of real production (22 panels, two roofs,
+days with curtailment left out): error per day 8.9 % -> 7.8 % for today,
+10.6 % -> 9.8 % for tomorrow, and the forecast no longer runs 3 % low.
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import CONF_SERIAL, DOMAIN
 
 if TYPE_CHECKING:
     from .coordinator import EnvoyCoordinator
@@ -54,12 +61,22 @@ ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 # Backtested on archived forecasts against real production: the average of
 # these three beats every single model and every other combination tried.
-WEATHER_MODELS = ("dwd_icon_seamless", "ecmwf_ifs025", "meteofrance_seamless")
-HOURLY = "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,wind_speed_10m"
+WEATHER_MODELS = (
+    "dwd_icon_seamless",
+    "ecmwf_ifs025",
+    "meteofrance_seamless",
+    "knmi_seamless",
+    "ukmo_seamless",
+    "gfs_seamless",
+)
+HOURLY = (
+    "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,"
+    "wind_speed_10m,relative_humidity_2m,snow_depth"
+)
 LEARN_DAYS = 365
-MODEL = 4  # bump when the learning changes: everything is learned again
+MODEL = 5  # bump when the learning changes: everything is learned again
 STORAGE_VERSION = 1
-PAST_DAYS = 14
+PAST_DAYS = 7
 FORECAST_DAYS = 4  # today in UTC can still be yesterday locally
 MIN_DAY_IRRADIANCE = 250  # Wh/m² - darker days say little about the system
 DEFAULT_TILT = 35.0
@@ -80,7 +97,17 @@ RECENT_MIN_DAYS = 12
 RECENT_LIMITS = (0.7, 1.4)
 TEMP_COEFF = -0.0037  # per °C cell temperature above 25 °C (crystalline silicon)
 CELL_HEATING = 0.032  # °C per W/m² in still air (open rack ~0.03)
-INTRADAY_HOURS = 3.0  # how long the measured deviation of today keeps counting
+INTRADAY_HOURS = 2.0  # how long the measured deviation of the last hour keeps counting
+INTRADAY_WEIGHT = 0.6  # backtested: next hour 16.1 % -> 14.4 % error
+OFF_RATIO = 0.03  # under a bright sky less than this share of clear-sky output = switched off
+OFF_MIN_CLEAR = 100.0  # W/m² of clear-sky light on the roof before that is judged
+BLEND_MIN_DAYS = 30  # days of history before the weather models are weighed
+BLEND_RIDGE = 0.001
+HUMID_FROM = 80.0  # % relative humidity where fog/drizzle starts to count
+SNOW_FROM = 0.01  # m of forecast snow depth from which the panels are (partly) covered
+SNOW_FULL = 0.02
+SNOW_LOSS = 0.5  # backtested on a week of snow: error of those days 62 % -> 41 %
+LOG_DAYS = 60
 
 
 @dataclass
@@ -97,6 +124,9 @@ class ForecastData:
     best_hour_tomorrow: datetime | None = None  # start of tomorrow's sunniest hour
     power_now: float | None = None  # W
     calibration: dict[str, dict[str, Any]] = field(default_factory=dict)
+    blend: dict[str, Any] | None = None  # learned weight of every weather model
+    error_30d: float | None = None  # % mean error per day of the day-ahead forecast
+    intraday: float | None = None  # measured / expected over the last hour
     updated: datetime | None = None
     error: str | None = None
 
@@ -110,6 +140,11 @@ class Weather:
     dhi: dict[datetime, float]
     temp: dict[datetime, float] = field(default_factory=dict)  # °C
     wind: dict[datetime, float] = field(default_factory=dict)  # km/h
+    humidity: dict[datetime, float] = field(default_factory=dict)  # %
+    snow: dict[datetime, float] = field(default_factory=dict)  # m on the ground
+    # The same hours per weather model (empty for a single source); this object
+    # then holds their average.
+    models: dict[str, Weather] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------- sun maths
@@ -168,10 +203,10 @@ def plane_series(
     """Hourly W/m² on a roof surface (sun position at the middle of the hour)."""
     out: dict[datetime, float] = {}
     for end, ghi in weather.ghi.items():
+        if end not in sun or end not in weather.dni or end not in weather.dhi:
+            continue
         elev, az = sun[end]
-        g = plane_irradiance(
-            ghi, weather.dni.get(end, 0.0), weather.dhi.get(end, 0.0), elev, az, tilt, azimuth
-        )
+        g = plane_irradiance(ghi, weather.dni[end], weather.dhi[end], elev, az, tilt, azimuth)
         out[end] = g * temperature_factor(g, weather.temp.get(end), weather.wind.get(end))
     return out
 
@@ -413,38 +448,275 @@ def recent_ratio(
     return min(RECENT_LIMITS[1], max(RECENT_LIMITS[0], actual / expected)), days
 
 
+WEATHER_FIELDS = {
+    "ghi": ("shortwave_radiation", True),
+    "dni": ("direct_normal_irradiance", True),
+    "dhi": ("diffuse_radiation", True),
+    "temp": ("temperature_2m", False),
+    "wind": ("wind_speed_10m", True),
+    "humidity": ("relative_humidity_2m", True),
+    "snow": ("snow_depth", True),
+}
+
+
 def _weather_from(raw: dict[str, Any]) -> Weather:
     """Open-Meteo hourly answer -> Weather keyed by the end of the hour (UTC).
 
     With several weather models the answer has one series per model
-    (``shortwave_radiation_dwd_icon_seamless``...); their average is used.
+    (``shortwave_radiation_dwd_icon_seamless``...): the result is their
+    average, with every model on its own in ``models``.
     """
     hourly = raw.get("hourly") or {}
     times = []
     for stamp in hourly.get("time") or []:
         times.append(dt_util.parse_datetime(f"{stamp}:00+00:00" if len(stamp) == 16 else stamp))
 
-    def series(name: str, clamp: bool = True) -> dict[datetime, float]:
+    def column(values: list[Any], clamp: bool) -> dict[datetime, float]:
         # Open-Meteo radiation is the mean of the *preceding* hour: the label is
         # the end of the hour (verified against a year of real production).
-        columns = [v for k, v in hourly.items() if k == name or k.startswith(f"{name}_")]
         out: dict[datetime, float] = {}
         for i, t in enumerate(times):
-            if t is None:
+            if t is None or i >= len(values) or values[i] is None:
                 continue
-            values = [float(col[i]) for col in columns if i < len(col) and col[i] is not None]
-            if values:
-                mean = sum(values) / len(values)
-                out[t] = max(0.0, mean) if clamp else mean
+            value = float(values[i])
+            out[t] = max(0.0, value) if clamp else value
         return out
 
-    return Weather(
-        ghi=series("shortwave_radiation"),
-        dni=series("direct_normal_irradiance"),
-        dhi=series("diffuse_radiation"),
-        temp=series("temperature_2m", clamp=False),
-        wind=series("wind_speed_10m"),
-    )
+    def mean(columns: list[dict[datetime, float]]) -> dict[datetime, float]:
+        total: dict[datetime, float] = {}
+        count: dict[datetime, int] = {}
+        for col in columns:
+            for t, v in col.items():
+                total[t] = total.get(t, 0.0) + v
+                count[t] = count.get(t, 0) + 1
+        return {t: v / count[t] for t, v in total.items()}
+
+    per_model: dict[str, dict[str, dict[datetime, float]]] = {}
+    for key, values in hourly.items():
+        if key == "time" or not isinstance(values, list):
+            continue
+        for name, (variable, clamp) in WEATHER_FIELDS.items():
+            if key == variable:
+                per_model.setdefault("", {})[name] = column(values, clamp)
+            elif key.startswith(f"{variable}_"):
+                per_model.setdefault(key[len(variable) + 1 :], {})[name] = column(values, clamp)
+    blended = {
+        name: mean([fields[name] for fields in per_model.values() if name in fields])
+        for name in WEATHER_FIELDS
+    }
+    models = {
+        model: Weather(**{name: fields.get(name, {}) for name in WEATHER_FIELDS})
+        for model, fields in per_model.items()
+        if model and fields.get("ghi") and fields.get("dni") and fields.get("dhi")
+    }
+    return Weather(**blended, models=models)
+
+
+def _merge_weather(target: Weather, source: Weather, until: datetime) -> None:
+    """Complete ``target`` with the hours up to ``until`` that only ``source`` has."""
+    for name in WEATHER_FIELDS:
+        into, extra = getattr(target, name), getattr(source, name)
+        for t, v in extra.items():
+            if t <= until and t not in into:
+                into[t] = v
+    for model, weather in source.models.items():
+        if model in target.models:
+            _merge_weather(target.models[model], weather, until)
+
+
+def expected_production(
+    weather: Weather,
+    infos: list[dict[str, Any]],
+    lat: float,
+    lon: float,
+    sun: dict[datetime, tuple[float, float]],
+    recent: bool,
+) -> dict[datetime, float]:
+    """Wh per hour of all roof surfaces together for one source of weather.
+
+    ``recent``: with the factor of the last weeks (used while the weather
+    models are not weighed yet); otherwise the plain factor of the year.
+    """
+    total: dict[datetime, float] = {}
+    for info in infos:
+        plane = plane_series(weather, lat, lon, info["tilt"], info["azimuth"], sun)
+        factor = info["factor"] if recent else info.get("year_factor", info["factor"])
+        shade = info.get("shade") or {}
+        for moment, value in plane.items():
+            corr = shade.get(shade_cell(*sun[moment]), 1.0) if value else 1.0
+            total[moment] = total.get(moment, 0.0) + value * factor * corr
+    return total
+
+
+def learn_blend(
+    history: Weather,
+    infos: list[dict[str, Any]],
+    lat: float,
+    lon: float,
+    sun: dict[datetime, tuple[float, float]],
+    target: dict[datetime, float],
+) -> dict[str, Any] | None:
+    """Weigh the weather models against a year of real production."""
+    if len(history.models) < 2:
+        return None
+    names = sorted(history.models)
+    per_model = [expected_production(history.models[m], infos, lat, lon, sun, False) for m in names]
+    rows: list[tuple[list[float], float, float]] = []
+    days: set[Any] = set()
+    for moment, actual in target.items():
+        if moment not in sun or sun[moment][0] <= 0:
+            continue
+        values = [series.get(moment) for series in per_model]
+        if any(v is None for v in values):
+            continue
+        rows.append((values, humid(history.humidity.get(moment)), actual))  # type: ignore[arg-type]
+        days.add(dt_util.as_local(moment).date())
+    if len(days) < BLEND_MIN_DAYS or len(rows) < BLEND_MIN_DAYS * 6:
+        return None
+    fitted = fit_blend(rows)
+    if fitted is None:
+        return None
+    weights, wet = fitted
+    return {
+        "weights": {name: round(w, 4) for name, w in zip(names, weights, strict=True)},
+        "humidity": round(wet, 4),
+        "days": len(days),
+    }
+
+
+def energy_between(hourly: dict[datetime, float], begin: datetime, end: datetime) -> float:
+    """Wh the hourly series (keyed by the end of the hour) holds between two moments."""
+    hour = timedelta(hours=1)
+    total = 0.0
+    for moment, value in hourly.items():
+        overlap = min(end, moment) - max(begin, moment - hour)
+        if overlap > timedelta(0):
+            total += value * (overlap / hour)
+    return total
+
+
+# ------------------------------------------------ switched off / curtailed
+
+
+def clear_sky(elevation: float) -> tuple[float, float, float]:
+    """(global, direct normal, diffuse) W/m² under a cloudless sky (Haurwitz)."""
+    if elevation <= 0:
+        return 0.0, 0.0, 0.0
+    cos_zen = math.sin(math.radians(elevation))
+    ghi = 1098 * cos_zen * math.exp(-0.057 / cos_zen)
+    dhi = min(ghi, 0.1 * ghi + 25 * min(1.0, cos_zen * 5))
+    dni = (ghi - dhi) / cos_zen if cos_zen > 0.02 else 0.0
+    return ghi, dni, dhi
+
+
+def off_hours(
+    production: dict[datetime, float],
+    sun: dict[datetime, tuple[float, float]],
+    tilt: float,
+    azimuth: float,
+    capacity: float,
+) -> set[datetime]:
+    """Hours in which a roof surface was switched off, curtailed or snowed in.
+
+    Even the thickest clouds leave some 10 % of the clear-sky light. A surface
+    making under 3 % of its clear-sky output while the sun is well up was not
+    limited by the weather (production stopped at negative prices, an outage,
+    snow). Those hours, and the half hours next to them, teach nothing about
+    the weather and are left out of the learning.
+    ``capacity`` is the Wh the surface makes per Wh/m² (rated power is enough).
+    """
+    off: set[datetime] = set()
+    hour = timedelta(hours=1)
+    for end, actual in production.items():
+        if end not in sun:
+            continue
+        elev, az = sun[end]
+        clear = plane_irradiance(*clear_sky(elev), elev, az, tilt, azimuth)
+        if clear >= OFF_MIN_CLEAR and actual < OFF_RATIO * clear * capacity:
+            off.update((end - hour, end, end + hour))
+    return off
+
+
+# ----------------------------------------------------- weighing the models
+
+
+def humid(value: float | None) -> float:
+    """0..1: how far the air is into fog and drizzle (80 % -> 0, 100 % -> 1)."""
+    if value is None:
+        return 0.0
+    return min(1.0, max(0.0, (value - HUMID_FROM) / (100.0 - HUMID_FROM)))
+
+
+def fit_blend(rows: list[tuple[list[float], float, float]]) -> tuple[list[float], float] | None:
+    """Weight of every weather model that best explains the real production.
+
+    ``rows``: per hour ([expected Wh according to each model], humidity 0..1,
+    measured Wh). Solves measured = sum(w_k * model_k) + h * mean(models) *
+    humidity with w_k >= 0 (least squares with a little ridge, by coordinate
+    descent - no numpy in Home Assistant). Returns (weights, humidity weight).
+
+    One model that is right more often gets more weight; a model that adds
+    nothing ends at 0. The sum of the weights also sets the level, so the
+    forecast is unbiased against the meter it is learned on.
+    """
+    if not rows:
+        return None
+    count = len(rows[0][0])
+    size = count + 1
+    a = [[0.0] * size for _ in range(size)]
+    b = [0.0] * size
+    for values, wet, actual in rows:
+        x = [*values, sum(values) / count * wet]
+        for j in range(size):
+            xj = x[j]
+            if not xj:
+                continue
+            b[j] += xj * actual
+            row = a[j]
+            for k in range(j, size):
+                row[k] += xj * x[k]
+    for j in range(size):
+        for k in range(j):
+            a[j][k] = a[k][j]
+        a[j][j] += a[j][j] * BLEND_RIDGE + 1e-6
+    w = [0.0] * size
+    for _ in range(400):
+        for j in range(size):
+            rest = b[j] - sum(a[j][k] * w[k] for k in range(size) if k != j)
+            value = rest / a[j][j]
+            # The models can only add; humidity may (and does) subtract.
+            w[j] = max(0.0, value) if j < count else max(-1.0, min(0.5, value))
+    if sum(w[:count]) <= 0:
+        return None
+    return w[:count], w[count]
+
+
+def blend_value(
+    values: dict[str, float], wet: float, blend: dict[str, Any] | None
+) -> float | None:
+    """Expected Wh from what every model expects, with the learned weights.
+
+    Without learned weights: the plain average. A model that is missing for an
+    hour hands its weight to the others.
+    """
+    if not values:
+        return None
+    mean = sum(values.values()) / len(values)
+    weights = (blend or {}).get("weights") or {}
+    known = {m: w for m, w in weights.items() if m in values}
+    total = sum(weights.values())
+    have = sum(known.values())
+    if not known or have <= 0 or total <= 0:
+        return mean
+    level = sum(values[m] * w for m, w in known.items()) * total / have
+    return max(0.0, level + (blend or {}).get("humidity", 0.0) * mean * wet)
+
+
+def snow_factor(depth: float | None) -> float:
+    """Share of the production that is left with snow on the ground."""
+    if depth is None or depth < SNOW_FROM:
+        return 1.0
+    return 1 - SNOW_LOSS * min(1.0, depth / SNOW_FULL)
 
 
 class SolarForecast:
@@ -459,9 +731,27 @@ class SolarForecast:
             hass, STORAGE_VERSION, f"{DOMAIN}.{coordinator.config_entry.entry_id}.forecast"
         )
         self._learned: dict[str, dict[str, Any]] = {}
+        self._blend: dict[str, Any] | None = None
         self._learned_at: datetime | None = None
         self._loaded = False
         self.history_source: str | None = None
+        # (moment, Wh produced today) of the last updates: what the last hour
+        # really made, against what was expected for it.
+        self._samples: list[tuple[datetime, float]] = []
+        # The forecast as it stood the evening before, per day, and how it turned
+        # out: [[date, forecast kWh, produced kWh], ...].
+        self._issued: dict[str, float] = {}
+        self.log: list[list[Any]] = []
+
+    def _stored(self) -> dict[str, Any]:
+        return {
+            "surfaces": self._learned,
+            "blend": self._blend,
+            "learned_at": self._learned_at.isoformat() if self._learned_at else None,
+            "model": MODEL,
+            "issued": self._issued,
+            "log": self.log,
+        }
 
     async def async_update(self, *_: Any) -> None:
         """Refresh the forecast (every 30 minutes)."""
@@ -476,10 +766,14 @@ class SolarForecast:
         if not self._loaded:
             stored = await self._store.async_load() or {}
             self._learned = stored.get("surfaces") or {}
+            self._blend = stored.get("blend") or None
+            self._issued = stored.get("issued") or {}
+            self.log = stored.get("log") or []
             at = stored.get("learned_at")
             self._learned_at = dt_util.parse_datetime(at) if at else None
             if stored.get("model") != MODEL:
                 self._learned_at = None
+                self._blend = None
             self._loaded = True
         lat, lon = self.hass.config.latitude, self.hass.config.longitude
         if lat is None or lon is None or not self.coordinator.data:
@@ -500,8 +794,9 @@ class SolarForecast:
                 lambda: {end: sun_position(end - timedelta(minutes=30), lat, lon) for end in history.ghi}
             )
             await self._async_learn(surfaces, history, history_sun, lat, lon)
-        self._compute(surfaces, weather, sun, lat, lon)
+        await self.hass.async_add_executor_job(self._compute, surfaces, weather, sun, lat, lon)
         self.data.error = None
+        self._store.async_delay_save(self._stored, 120)
 
     async def _async_get(self, url: str, params: dict[str, str], timeout: float) -> Weather:
         """One Open-Meteo request; without the chosen models if they are refused."""
@@ -514,7 +809,8 @@ class SolarForecast:
                     url, params=query, timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as resp:
                     resp.raise_for_status()
-                    weather = _weather_from(await resp.json(content_type=None))
+                    raw = await resp.json(content_type=None)
+                weather = await self.hass.async_add_executor_job(_weather_from, raw)
                 if weather.ghi:
                     return weather
             except Exception as err:  # noqa: BLE001 - try the default model
@@ -532,7 +828,7 @@ class SolarForecast:
                 "forecast_days": str(FORECAST_DAYS),
                 "timezone": "UTC",
             },
-            20,
+            30,
         )
 
     async def _async_history_weather(self, lat: float, lon: float, recent: Weather) -> Weather:
@@ -546,32 +842,51 @@ class SolarForecast:
             "hourly": HOURLY,
             "timezone": "UTC",
         }
-        merged = Weather(ghi={}, dni={}, dhi={}, temp={}, wind={})
+        merged = Weather(ghi={}, dni={}, dhi={})
         self.history_source = None
         for url, name in ((HISTORICAL_URL, "historical forecasts"), (ARCHIVE_URL, "weather archive")):
             try:
-                merged = await self._async_get(url, params, 90)
+                merged = await self._async_get(url, params, 120)
                 self.history_source = name
                 break
             except Exception as err:  # noqa: BLE001 - next source, or the recent days only
                 _LOGGER.info("Open-Meteo %s not available: %s", name, err)
-        now = dt_util.utcnow()
-        for name in ("ghi", "dni", "dhi", "temp", "wind"):
-            target, source = getattr(merged, name), getattr(recent, name)
-            for t, v in source.items():
-                if t <= now and t not in target:
-                    target[t] = v
+        if not merged.models and not merged.ghi:
+            merged.models = {name: Weather(ghi={}, dni={}, dhi={}) for name in recent.models}
+        _merge_weather(merged, recent, dt_util.utcnow())
         return merged
 
-    async def _async_production(self, surfaces: list[dict[str, Any]]) -> dict[str, dict[datetime, float]]:
-        """Hourly production (Wh) per roof surface from the long-term statistics."""
+    async def _async_statistics(self, ids: set[str]) -> dict[str, dict[datetime, float]]:
+        """Hourly mean (W = Wh per hour) of sensors, keyed by the end of the hour."""
         try:
             from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.statistics import statistics_during_period
         except ImportError:
             return {}
-        if "recorder" not in self.hass.config.components:
+        if not ids or "recorder" not in self.hass.config.components:
             return {}
+        end = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=LEARN_DAYS)
+        stats = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period, self.hass, start, end, ids, "hour", None, {"mean"}
+        )
+
+        def to_dt(value: Any) -> datetime:
+            if isinstance(value, (int, float)):
+                return dt_util.utc_from_timestamp(value)
+            return dt_util.as_utc(value)
+
+        return {
+            entity_id: {
+                to_dt(r["start"]) + timedelta(hours=1): float(r["mean"])
+                for r in rows
+                if r.get("mean") is not None
+            }
+            for entity_id, rows in stats.items()
+        }
+
+    async def _async_production(self, surfaces: list[dict[str, Any]]) -> dict[str, dict[datetime, float]]:
+        """Hourly production (Wh) per roof surface from the long-term statistics."""
         registry = er.async_get(self.hass)
         per_serial: dict[str, list[str]] = {}
         for surface in surfaces:
@@ -594,20 +909,9 @@ class SolarForecast:
                         continue
                     ids.append(state.entity_id)
                 per_serial[serial] = ids
-        all_ids = {i for ids in per_serial.values() for i in ids}
-        if not all_ids:
+        stats = await self._async_statistics({i for ids in per_serial.values() for i in ids})
+        if not stats:
             return {}
-        end = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-        start = end - timedelta(days=LEARN_DAYS)
-        stats = await get_instance(self.hass).async_add_executor_job(
-            statistics_during_period, self.hass, start, end, all_ids, "hour", None, {"mean"}
-        )
-
-        def to_dt(value: Any) -> datetime:
-            if isinstance(value, (int, float)):
-                return dt_util.utc_from_timestamp(value)
-            return dt_util.as_utc(value)
-
         result: dict[str, dict[datetime, float]] = {}
         for surface in surfaces:
             total: dict[datetime, float] = {}
@@ -616,11 +920,7 @@ class SolarForecast:
             for serial in surface["serials"]:
                 best: dict[datetime, float] = {}
                 for entity_id in per_serial.get(serial, []):
-                    rows = {
-                        to_dt(r["start"]) + timedelta(hours=1): float(r["mean"])
-                        for r in stats.get(entity_id, [])
-                        if r.get("mean") is not None
-                    }
+                    rows = stats.get(entity_id) or {}
                     if len(rows) > len(best):
                         best = rows
                 if not best:
@@ -636,6 +936,33 @@ class SolarForecast:
                 result[surface["label"]] = total
         return result
 
+    async def _async_meter(self) -> dict[datetime, float]:
+        """Hourly production (Wh) of the whole system as the production meter saw it.
+
+        The microinverters report a few percent less than the production meter
+        measures; the forecast is compared with the meter, so it is learned on
+        the meter. Our own production sensor, completed with the history of the
+        core Enphase integration (which often goes back further).
+        """
+        serial = str(self.coordinator.config_entry.data.get(CONF_SERIAL, ""))
+        registry = er.async_get(self.hass)
+        own = registry.async_get_entity_id("sensor", DOMAIN, f"{serial}_production_power")
+        others = [
+            state.entity_id
+            for state in self.hass.states.async_all("sensor")
+            if serial
+            and serial in state.entity_id
+            and state.entity_id.endswith("current_power_production")
+            and state.attributes.get("unit_of_measurement") == "W"
+        ]
+        stats = await self._async_statistics({i for i in (own, *others) if i})
+        meter: dict[datetime, float] = {}
+        for entity_id in sorted(others, key=lambda i: len(stats.get(i) or {})):
+            meter.update(stats.get(entity_id) or {})
+        if own:
+            meter.update(stats.get(own) or {})
+        return {t: max(0.0, v) for t, v in meter.items()}
+
     async def _async_learn(
         self,
         surfaces: list[dict[str, Any]],
@@ -644,9 +971,11 @@ class SolarForecast:
         lat: float,
         lon: float,
     ) -> None:
-        """Learn orientation (if unknown) and Wh per Wh/m² of every roof surface."""
+        """Learn the roof surfaces and how far every weather model is to be trusted."""
         production = await self._async_production(surfaces)
         learned: dict[str, dict[str, Any]] = {}
+        clean: dict[str, dict[datetime, float]] = {}
+        off_all: set[datetime] = set()
         for surface in surfaces:
             label = surface["label"]
             previous = self._learned.get(label) or {}
@@ -664,9 +993,18 @@ class SolarForecast:
                     entry.update({k: previous[k] for k in ("tilt", "azimuth", "orientation", "fit_error") if k in previous})
                 else:
                     entry.update(tilt=DEFAULT_TILT, azimuth=DEFAULT_AZIMUTH, orientation="default")
+            # Hours in which the surface was switched off say nothing about the weather.
+            rated = default_factor(self.coordinator, surface["serials"])
+            off = await self.hass.async_add_executor_job(
+                off_hours, prod, sun, entry["tilt"], entry["azimuth"], rated
+            ) if prod else set()
+            off_all |= off
+            prod = clean[label] = {t: v for t, v in prod.items() if t not in off}
             # Wh per Wh/m² (total production over total irradiance, no bias in
             # backtests) and the shade map, without snow days.
-            plane = plane_series(weather, lat, lon, entry["tilt"], entry["azimuth"], sun)
+            plane = await self.hass.async_add_executor_job(
+                plane_series, weather, lat, lon, entry["tilt"], entry["azimuth"], sun
+            )
             result = await self.hass.async_add_executor_job(learn_factor_and_shade, prod, plane, sun) if prod else None
             if result:
                 factor, days, shade = result
@@ -676,22 +1014,64 @@ class SolarForecast:
                 entry.update(
                     factor=round(factor * recent[0], 4), year_factor=round(factor, 4),
                     recent_ratio=round(recent[0], 3), recent_days=recent[1],
-                    calibration_days=days, shade=shade,
+                    calibration_days=days, shade=shade, off_hours=len(off) // 3,
                 )
             elif previous.get("calibration_days"):
                 entry.update(
                     factor=previous["factor"],
+                    year_factor=previous.get("year_factor", previous["factor"]),
                     calibration_days=previous["calibration_days"],
                     shade=previous.get("shade") or {},
                 )
             else:
-                entry.update(factor=round(default_factor(self.coordinator, surface["serials"]), 4), calibration_days=0, shade={})
+                entry.update(factor=round(rated, 4), calibration_days=0, shade={})
             learned[label] = entry
         self._learned = learned
+        blend = await self._async_learn_blend(surfaces, weather, sun, lat, lon, clean, off_all)
+        if blend:
+            # Without a new fit (history not available today) the last one stays.
+            self._blend = blend
         self._learned_at = dt_util.utcnow()
-        await self._store.async_save(
-            {"surfaces": learned, "learned_at": self._learned_at.isoformat(), "model": MODEL}
+        await self._store.async_save(self._stored())
+
+    async def _async_learn_blend(
+        self,
+        surfaces: list[dict[str, Any]],
+        weather: Weather,
+        sun: dict[datetime, tuple[float, float]],
+        lat: float,
+        lon: float,
+        production: dict[str, dict[datetime, float]],
+        off: set[datetime],
+    ) -> dict[str, Any] | None:
+        """Weights of the weather models, learned on the production meter."""
+        infos = [self._learned[s["label"]] for s in surfaces]
+        if len(weather.models) < 2 or any(not i.get("calibration_days") for i in infos):
+            return None
+        # All surfaces together, only hours every surface has.
+        inverters: dict[datetime, float] = {}
+        seen: dict[datetime, int] = {}
+        for surface in surfaces:
+            for t, v in (production.get(surface["label"]) or {}).items():
+                inverters[t] = inverters.get(t, 0.0) + v
+                seen[t] = seen.get(t, 0) + 1
+        inverters = {t: v for t, v in inverters.items() if seen[t] == len(surfaces) and t not in off}
+        meter = await self._async_meter()
+        # Where the meter has no history the microinverters stand in, lifted to
+        # the level of the meter (it reads a few percent more).
+        since = dt_util.utcnow() - timedelta(days=RECENT_DAYS)
+        both = [(meter[t], v) for t, v in inverters.items() if t in meter and t >= since and v > 50]
+        ratio = 1.0
+        if len(both) >= 50:
+            ratio = min(1.15, max(0.9, sum(m for m, _ in both) / sum(v for _, v in both)))
+        target = {t: (meter[t] if t in meter else v * ratio) for t, v in inverters.items()}
+        blend = await self.hass.async_add_executor_job(
+            learn_blend, weather, infos, lat, lon, sun, target
         )
+        if blend:
+            blend["meter_ratio"] = round(ratio, 3)
+            blend["meter_hours"] = sum(1 for t in target if t in meter)
+        return blend
 
     def _compute(
         self,
@@ -701,8 +1081,7 @@ class SolarForecast:
         lat: float,
         lon: float,
     ) -> None:
-        inverters = self.coordinator.data.inverters
-        hourly: dict[datetime, float] = {}
+        infos: list[dict[str, Any]] = []
         calibration: dict[str, dict[str, Any]] = {}
         for surface in surfaces:
             info = self._learned.get(surface["label"]) or {
@@ -712,16 +1091,26 @@ class SolarForecast:
                 "factor": default_factor(self.coordinator, surface["serials"]),
                 "calibration_days": 0,
             }
-            shade = info.get("shade") or {}
+            infos.append(info)
             calibration[surface["label"] or "all"] = {
                 "panels": len(surface["serials"]),
                 **{k: v for k, v in info.items() if k != "shade"},
-                "shade_cells": len(shade),
+                "shade_cells": len(info.get("shade") or {}),
             }
-            plane = plane_series(weather, lat, lon, info["tilt"], info["azimuth"], sun)
-            for moment, value in plane.items():
-                corr = shade.get(shade_cell(*sun[moment]), 1.0) if value else 1.0
-                hourly[moment] = hourly.get(moment, 0.0) + value * info["factor"] * corr
+        # What every weather model expects, then their learned mix. Until the
+        # models are weighed: their average with the factor of the last weeks.
+        models = weather.models or {"": weather}
+        blend = self._blend if self._blend and set(self._blend.get("weights") or {}) & set(models) else None
+        per_model = {
+            name: expected_production(source, infos, lat, lon, sun, blend is None)
+            for name, source in models.items()
+        }
+        hourly: dict[datetime, float] = {}
+        for moment in weather.ghi:
+            values = {name: series[moment] for name, series in per_model.items() if moment in series}
+            value = blend_value(values, humid(weather.humidity.get(moment)), blend)
+            if value is not None:
+                hourly[moment] = value * snow_factor(weather.snow.get(moment))
         now = dt_util.utcnow()
         start = dt_util.as_utc(dt_util.start_of_local_day())
 
@@ -729,23 +1118,33 @@ class SolarForecast:
             begin = start + timedelta(days=offset)
             return round(sum(v for t, v in hourly.items() if begin < t <= begin + timedelta(days=1)) / 1000, 2)
 
-        so_far = 0.0
-        for moment, value in hourly.items():
-            if start < moment <= now:
-                so_far += value
-            elif moment - timedelta(hours=1) < now < moment and moment > start:
-                so_far += value * ((now - (moment - timedelta(hours=1))) / timedelta(hours=1))
-        # Today so far tells how the weather really turned out: the next hours
-        # of today follow that deviation, fading out over a few hours.
+        so_far = energy_between(hourly, start, now)
+        # The last hour tells how the weather really turned out: the next hours
+        # of today follow that deviation, fading out quickly (clouds move on).
         produced = getattr(self.coordinator.data, "production_today", None)
-        if produced is not None and so_far >= 300:
-            ratio = min(1.6, max(0.5, produced / so_far))
-            weight = min(1.0, so_far / 1500) * 0.7
-            end_today = start + timedelta(days=1)
-            for moment in list(hourly):
-                if now < moment <= end_today:
-                    ahead = max(0.0, (moment - timedelta(minutes=30) - now) / timedelta(hours=1))
-                    hourly[moment] *= 1 + (ratio - 1) * weight * math.exp(-ahead / INTRADAY_HOURS)
+        intraday = None
+        if produced is not None:
+            self._samples = [
+                (t, v) for t, v in self._samples if now - t <= timedelta(hours=2) and v <= produced
+            ]
+            past = [
+                s for s in self._samples
+                if timedelta(minutes=40) <= now - s[0] <= timedelta(minutes=95) and s[0] >= start
+            ]
+            if past:
+                then, before = min(past, key=lambda s: abs((now - s[0]) - timedelta(hours=1)))
+                hours = (now - then) / timedelta(hours=1)
+                expected = energy_between(hourly, then, now)
+                if expected >= 100 * hours:
+                    intraday = min(2.5, max(0.4, (produced - before) / expected))
+                    weight = INTRADAY_WEIGHT * min(1.0, expected / hours / 300)
+                    end_today = start + timedelta(days=1)
+                    for moment in list(hourly):
+                        if now < moment <= end_today:
+                            ahead = max(0.0, (moment - timedelta(minutes=30) - now) / timedelta(hours=1))
+                            hourly[moment] *= 1 + (intraday - 1) * weight * math.exp(-ahead / INTRADAY_HOURS)
+            if not self._samples or now - self._samples[-1][0] >= timedelta(minutes=10):
+                self._samples.append((now, produced))
         current = 0.0
         for moment, value in hourly.items():
             if moment - timedelta(hours=1) < now < moment:
@@ -756,19 +1155,52 @@ class SolarForecast:
             if start + timedelta(days=1) < t <= start + timedelta(days=2)
         ]
         best = max(tomorrow) if tomorrow else None
+        today_kwh, tomorrow_kwh = day_kwh(0), day_kwh(1)
+        issued_yesterday = self._track(today_kwh, tomorrow_kwh)
         self.data = ForecastData(
             hourly={t: round(v, 1) for t, v in sorted(hourly.items())},
-            today=day_kwh(0),
-            tomorrow=day_kwh(1),
+            today=today_kwh,
+            tomorrow=tomorrow_kwh,
             day_after=day_kwh(2),
             so_far=round(so_far / 1000, 2),
-            yesterday=day_kwh(-1),
+            yesterday=issued_yesterday if issued_yesterday is not None else day_kwh(-1),
             next_hour=round(hourly.get(next_end, 0.0), 0) if next_end in hourly else None,
             best_hour_tomorrow=best[1] - timedelta(hours=1) if best and best[0] > 0 else None,
             power_now=round(current, 0),
             calibration=calibration,
+            blend=blend,
+            error_30d=self._error_30d(),
+            intraday=round(intraday, 2) if intraday is not None else None,
             updated=now,
         )
+
+    def _track(self, today_kwh: float, tomorrow_kwh: float) -> float | None:
+        """Remember the forecast as it was given, and how the day turned out.
+
+        The value for a day is frozen at midnight: what "tomorrow" said the
+        evening before. Returns that value for yesterday (None if unknown), so
+        the accuracy sensor judges the forecast that was really shown.
+        """
+        today = dt_util.now().date()
+        self._issued[(today + timedelta(days=1)).isoformat()] = tomorrow_kwh
+        self._issued.setdefault(today.isoformat(), today_kwh)
+        yesterday = (today - timedelta(days=1)).isoformat()
+        for key in [k for k in self._issued if k < yesterday]:
+            del self._issued[key]
+        issued = self._issued.get(yesterday)
+        actual = getattr(self.coordinator.data, "production_yesterday", None)
+        if issued and actual is not None and all(row[0] != yesterday for row in self.log):
+            self.log.append([yesterday, issued, round(actual / 1000, 2)])
+            del self.log[:-LOG_DAYS]
+        return issued
+
+    def _error_30d(self) -> float | None:
+        """Mean error per day of the day-ahead forecast over the last 30 days, in %."""
+        rows = self.log[-30:]
+        produced = sum(row[2] for row in rows)
+        if len(rows) < 5 or produced <= 0:
+            return None
+        return round(sum(abs(row[1] - row[2]) for row in rows) / produced * 100, 1)
 
     def hourly_attribute(self) -> list[list[Any]]:
         """[[hour end ISO, Wh], ...] for the cards (yesterday onwards)."""
